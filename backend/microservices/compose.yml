@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  mysql-evidence:
+    image: mysql:8.0
+    container_name: mysql_evidence
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: evidence
+      MYSQL_USER: evidence_user
+      MYSQL_PASSWORD: evidence_pass
+    ports:
+      - "3309:3306"
+    volumes:
+      - evidence_db_data:/var/lib/mysql
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - marketplace_network
+
+  evidence-service:
+    build: ./backend/microservices/evidence_service
+    container_name: evidence_service
+    ports:
+      - "5003:5003"
+    environment:
+      - DB_HOST=mysql-evidence
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=root
+      - DB_NAME=evidence
+    depends_on:
+      - mysql-evidence
+    networks:
+      - marketplace_network
+    restart: unless-stopped
+
+volumes:
+  evidence_db_data:
+
+networks:
+  marketplace_network:
+    driver: bridge
