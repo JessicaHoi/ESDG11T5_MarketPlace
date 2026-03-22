@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  mysql-evidence:
+    image: mysql:8.0
+    container_name: mysql_evidence
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: evidence
+      MYSQL_USER: evidence_user
+      MYSQL_PASSWORD: evidence_pass
+    ports:
+      - "3309:3306"
+    volumes:
+      - evidence_db_data:/var/lib/mysql
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - marketplace_network
+
+  evidence-service:
+    build: ./backend/microservices/evidence_service
+    container_name: evidence_service
+    ports:
+      - "5003:5003"
+    environment:
+      - DB_HOST=mysql-evidence
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=root
+      - DB_NAME=evidence
+    depends_on:
+      - mysql-evidence
+    networks:
+      - marketplace_network
+    restart: unless-stopped
+
+  payment-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: payment_db
+    ports:
+      - "3306:3306"
+    volumes:
+      - payment-db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  payment-service:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - DATABASE_URL=mysql+mysqlconnector://root:root@payment-db:3306/payment_db
+      - STRIPE_SECRET_KEY=sk_test_51TBqMQRyvvjJItIfALEjIOaidbihA4xcBZvHGxWeOA4zKEDqWEZOfVw0ZuhTq4IiJaz6m0qqWb1aZlxuie5lpP680000p8FUqd
+    depends_on:
+      payment-db:
+        condition: service_healthy
+
+volumes:
+  evidence_db_data:
+
+networks:
+  marketplace_network:
+    driver: bridge
