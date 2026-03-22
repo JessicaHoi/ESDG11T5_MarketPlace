@@ -1,0 +1,16 @@
+_format_version: "3.0"
+
+services:
+  - name: payment-service
+    url: http://payment-service:5000
+    routes:
+      - name: payment-routes
+        paths:
+          - /payment
+        strip_path: false
+
+# Instead of hitting port 5000 directly, use port 8000:
+# POST http://localhost:8000/payment/escrow
+# PUT  http://localhost:8000/payment/1/freeze
+# POST http://localhost:8000/payment/release
+# POST http://localhost:8000/payment/refund

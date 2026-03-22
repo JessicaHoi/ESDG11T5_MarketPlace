@@ -56,11 +56,15 @@ def hold_payment_in_escrow():
     try:
         # Create a Stripe PaymentIntent and capture it manually (escrow simulation)
         intent = stripe.PaymentIntent.create(
-            amount=int(float(data["amount"]) * 100),  # Stripe uses cents
+            amount=int(float(data["amount"]) * 100),
             currency="sgd",
             payment_method=data["paymentMethodID"],
-            capture_method="manual",  # authorise only, do not capture yet
+            capture_method="manual",
             confirm=True,
+            automatic_payment_methods={
+                "enabled": True,
+                "allow_redirects": "never",  # prevents redirect-based methods like PayNow
+            },
             metadata={"orderID": str(data["orderID"])},
         )
 
@@ -163,7 +167,7 @@ def refund_payment():
 
         payment.holdStatus   = "REFUNDED"
         payment.stripeStatus = intent["status"]
-        payment.updatedAt    = datetime.utcnow()
+        payment.updatedAt    = datetime.now()
         db.session.commit()
 
         return jsonify({
@@ -175,7 +179,19 @@ def refund_payment():
     except stripe.error.StripeError as e:
         return jsonify({"code": 500, "message": f"Stripe error: {str(e)}"}), 500
 
+import time
+
+with app.app_context():
+    retries = 5
+    while retries:
+        try:
+            db.create_all()
+            print("Database tables created.")
+            break
+        except Exception as e:
+            retries -= 1
+            print(f"DB not ready, retrying... ({e})")
+            time.sleep(3)
+
 if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
     app.run(host="0.0.0.0", port=5000, debug=True)
