@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-paper text-ink font-body;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-accent text-white font-display font-semibold px-6 py-3 rounded-none hover:bg-ink transition-colors duration-200 text-sm tracking-wide uppercase;
+  }
+
+  .btn-secondary {
+    @apply border border-ink text-ink font-display font-medium px-6 py-3 rounded-none hover:bg-ink hover:text-paper transition-colors duration-200 text-sm tracking-wide uppercase;
+  }
+
+  .btn-ghost {
+    @apply text-accent font-display font-medium px-4 py-2 hover:underline transition-all duration-200 text-sm tracking-wide uppercase;
+  }
+
+  .input-field {
+    @apply w-full border border-ink/20 bg-white px-4 py-3 font-body text-ink placeholder:text-muted focus:outline-none focus:border-accent transition-colors duration-200 rounded-none;
+  }
+
+  .card {
+    @apply bg-white border border-ink/10 hover:border-accent/40 transition-all duration-300;
+  }
+
+  .status-badge {
+    @apply inline-flex items-center px-2.5 py-0.5 text-xs font-mono font-medium uppercase tracking-wider;
+  }
+
+  .section-label {
+    @apply text-xs font-mono uppercase tracking-[0.2em] text-muted;
+  }
+
+  .page-title {
+    @apply font-display font-extrabold text-4xl md:text-5xl text-ink leading-tight;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #0D0D0D30; border-radius: 0; }
+
+/* Page transition */
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
+}
