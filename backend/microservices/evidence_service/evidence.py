@@ -1,27 +1,24 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
 from datetime import datetime
 import os
-
+ 
 app = Flask(__name__)
-
-
+CORS(app)
+ 
 DB_HOST = os.environ.get('DB_HOST', 'localhost')
-DB_PORT = os.environ.get('DB_PORT', '3308')
+DB_PORT = os.environ.get('DB_PORT', '3306')
 DB_USER = os.environ.get('DB_USER', 'root')
 DB_PASSWORD = os.environ.get('DB_PASSWORD', '')
 DB_NAME = os.environ.get('DB_NAME', 'evidence')
-
+ 
 app.config['SQLALCHEMY_DATABASE_URI'] = f'mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_recycle': 299}
-
-# app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+mysqlconnector://root@localhost:3308/evidence'
-# app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-# app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_recycle': 299}
-
+ 
 db = SQLAlchemy(app)
-
+ 
 class Evidence(db.Model):
     __tablename__ = 'evidence'
     
@@ -53,8 +50,8 @@ class Evidence(db.Model):
             "uploadedAt": self.uploadedAt.strftime("%Y-%m-%d %H:%M:%S") if self.uploadedAt else None,
             "isApproved": self.isApproved
         }
-
-
+ 
+ 
 @app.route("/evidence/<int:disputeID>", methods=['GET'])
 def get_evidence_by_dispute(disputeID):
     evidence_list = db.session.scalars(
@@ -73,8 +70,8 @@ def get_evidence_by_dispute(disputeID):
         "code": 404,
         "message": f"No evidence found for dispute ID: {disputeID}"
     }), 404
-
-
+ 
+ 
 @app.route("/evidence/<int:disputeID>/<int:evidenceID>", methods=['GET'])
 def get_evidence_by_id(disputeID, evidenceID):
     evidence = db.session.scalar(
@@ -90,13 +87,12 @@ def get_evidence_by_id(disputeID, evidenceID):
         "code": 404,
         "message": f"Evidence with ID {evidenceID} not found for dispute ID: {disputeID}"
     }), 404
-
-
+ 
+ 
 @app.route("/evidence", methods=['POST'])
 def upload_evidence():
     try:
         data = request.get_json()
-        
         
         required_fields = ['disputeID', 'description', 'uploadedBy', 'fileURL', 'fileType']
         for field in required_fields:
@@ -105,8 +101,7 @@ def upload_evidence():
                     "code": 400,
                     "message": f"Missing required field: {field}"
                 }), 400
-        
-
+ 
         evidence = Evidence(
             disputeID=data['disputeID'],
             description=data['description'],
@@ -130,8 +125,8 @@ def upload_evidence():
             "code": 500,
             "message": f"An error occurred: {str(e)}"
         }), 500
-
-
+ 
+ 
 @app.route("/evidence/<int:evidenceID>/approve", methods=['PUT'])
 def approve_evidence(evidenceID):
     try:
@@ -159,8 +154,8 @@ def approve_evidence(evidenceID):
             "code": 500,
             "message": f"An error occurred: {str(e)}"
         }), 500
-
-
+ 
+ 
 @app.route("/evidence/all", methods=['GET'])
 def get_all_evidence():
     evidence_list = db.session.scalars(db.select(Evidence)).all()
@@ -176,8 +171,8 @@ def get_all_evidence():
         "code": 404,
         "message": "No evidence found"
     }), 404
-
-
+ 
+ 
 @app.route("/evidence/<int:evidenceID>", methods=['PUT'])
 def update_evidence(evidenceID):
     try:
@@ -193,7 +188,6 @@ def update_evidence(evidenceID):
         
         data = request.get_json()
         
-       
         if 'description' in data:
             evidence.description = data['description']
         if 'fileURL' in data:
@@ -214,8 +208,8 @@ def update_evidence(evidenceID):
             "code": 500,
             "message": f"An error occurred: {str(e)}"
         }), 500
-
-
+ 
+ 
 @app.route("/evidence/<int:evidenceID>", methods=['DELETE'])
 def delete_evidence(evidenceID):
     try:
@@ -242,6 +236,7 @@ def delete_evidence(evidenceID):
             "code": 500,
             "message": f"An error occurred: {str(e)}"
         }), 500
-
+ 
+ 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5003, debug=True)
