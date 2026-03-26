@@ -1,0 +1,11 @@
+services:
+ dispute:
+   build:
+     context: ./
+     dockerfile: Dockerfile
+   image: dilahhh/dispute:1.0
+   container_name: dispute
+   ports:
+     - "5000:5000"
+   environment:
+     - dbURL=mysql+mysqlconnector://is213@host.docker.internal:3306/dispute
