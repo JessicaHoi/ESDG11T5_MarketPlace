@@ -4,10 +4,6 @@ A second-hand marketplace platform built with a microservices architecture. Buye
 
 ---
 
-<<<<<<< Updated upstream
-Setup Instructions
-- docker-compose up --build
-=======
 ## Architecture
 
 ### Composite Services
@@ -125,4 +121,3 @@ docker compose down -v
 - The **Listing Service** is hosted on OutSystems and is external to Docker Compose. Update `LISTING_SERVICE_URL` in `.env` once the URL is available. Steps 1 and 5 in `placeOrder.py` are currently commented out pending this.
 - The **Order Service** uses in-memory storage — orders are reset on restart. This is intentional for the current demo phase.
 - Stripe is running in **test mode** using `pm_card_visa` as the payment method for demo purposes.
->>>>>>> Stashed changes
