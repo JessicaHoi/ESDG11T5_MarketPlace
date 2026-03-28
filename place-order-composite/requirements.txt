@@ -1,4 +1,0 @@
-flask
-requests
-pika
-python-dotenv
