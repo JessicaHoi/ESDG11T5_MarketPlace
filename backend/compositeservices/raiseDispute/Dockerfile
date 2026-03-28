@@ -5,10 +5,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY raiseDispute.py .
 
-RUN mkdir -p /app/uploads
+EXPOSE 5010
 
-EXPOSE 5003
-
-CMD ["python", "evidence.py"]
+CMD ["python", "raiseDispute.py"]

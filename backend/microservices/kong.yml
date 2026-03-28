@@ -1,0 +1,75 @@
+_format_version: "3.0"
+
+services:
+  - name: payment-service
+    url: http://payment-service:5000
+    routes:
+      - name: payment-routes
+        paths:
+          - /payment
+        strip_path: false
+
+  - name: order-service
+    url: http://order-service:8000
+    routes:
+      - name: order-routes
+        paths:
+          - /orders
+        strip_path: false
+
+  - name: dispute-service
+    url: http://dispute-service:5000
+    routes:
+      - name: dispute-routes
+        paths:
+          - /dispute
+        strip_path: false
+
+  - name: evidence-service
+    url: http://evidence-service:5003
+    routes:
+      - name: evidence-routes
+        paths:
+          - /evidence
+        strip_path: false
+
+  - name: messaging-service
+    url: http://messaging-service:5003
+    routes:
+      - name: messaging-routes
+        paths:
+          - /messages
+        strip_path: false
+
+  - name: notification-service
+    url: http://notification-service:5002
+    routes:
+      - name: notification-routes
+        paths:
+          - /notification
+        strip_path: false
+
+  - name: place-order-service
+    url: http://place-order-service:5006
+    routes:
+      - name: placeorder-routes
+        paths:
+          - /placeorder
+        strip_path: false
+
+  - name: raise-dispute-service
+    url: http://raise-dispute-service:5010
+    routes:
+      - name: raisedispute-routes
+        paths:
+          - /raise-dispute
+        strip_path: false
+
+# All frontend API calls go through Kong on port 8000:
+# POST   http://localhost:8000/placeorder
+# POST   http://localhost:8000/raise-dispute
+# GET    http://localhost:8000/orders/{id}
+# POST   http://localhost:8000/payment/escrow
+# GET    http://localhost:8000/messages/{id}
+# GET    http://localhost:8000/notification/{id}
+# etc.

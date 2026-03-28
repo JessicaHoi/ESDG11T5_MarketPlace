@@ -1,3 +1,7 @@
 fastapi
 uvicorn
+<<<<<<< Updated upstream
 pydantic
+=======
+pydantic
+>>>>>>> Stashed changes
