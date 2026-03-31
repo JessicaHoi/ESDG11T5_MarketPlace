@@ -1,18 +1,11 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
-<<<<<<< Updated upstream
-from os import environ
-
-app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = environ.get('dbURL')
-=======
 import os, time
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
-    'DATABASE_URL', 'mysql+mysqlconnector://root:root@localhost:3308/dispute'
+    'DATABASE_URL', 'mysql+mysqlconnector://root:root@localhost:3306/dispute'
 )
->>>>>>> Stashed changes
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_recycle': 299}
 
@@ -78,7 +71,3 @@ with app.app_context():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
-<<<<<<< Updated upstream
-
-=======
->>>>>>> Stashed changes
