@@ -110,15 +110,32 @@ export function getDispute(disputeID) {
   return get(`/dispute/${disputeID}`)
 }
 
-// ─── EXTERNAL: Listing Service (OutSystems) ──────────────────────────────────
+// ─── EXTERNAL: Listing Service (local tmp.json fallback) ────────────────────
 export async function fetchListings() {
-  const res = await fetch('https://personal-8vnud50n.outsystemscloud.com/Listing/rest/Listing/listing/')
-  if (!res.ok) throw new Error(`Listing API HTTP ${res.status}`)
+  const res = await fetch('/tmp.json')
+  if (!res.ok) throw new Error(`Listing data unavailable (HTTP ${res.status})`)
   return res.json()
 }
 
 export async function fetchListingById(listingID) {
-  const res = await fetch(`https://personal-8vnud50n.outsystemscloud.com/Listing/rest/Listing/listing/${listingID}/`)
-  if (!res.ok) throw new Error(`Listing API HTTP ${res.status}`)
-  return res.json()
+  const res = await fetch('/tmp.json')
+  if (!res.ok) throw new Error(`Listing data unavailable (HTTP ${res.status})`)
+  const json = await res.json()
+  const listings = json?.data?.listings ?? []
+  const found = listings.find(l => String(l.listingID) === String(listingID))
+  if (!found) throw new Error(`Listing #${listingID} not found`)
+  return { data: found }
 }
+
+// When the OutSystems service is stable, we can switch back to these direct API calls instead of the local tmp.json fallback:
+// export async function fetchListings() {
+//   const res = await fetch('https://personal-8vnud50n.outsystemscloud.com/Listing/rest/Listing/listing/')
+//   if (!res.ok) throw new Error(`Listing API HTTP ${res.status}`)
+//   return res.json()
+// }
+
+// export async function fetchListingById(listingID) {
+//   const res = await fetch(`https://personal-8vnud50n.outsystemscloud.com/Listing/rest/Listing/listing/${listingID}/`)
+//   if (!res.ok) throw new Error(`Listing API HTTP ${res.status}`)
+//   return res.json() 
+// }

@@ -31,7 +31,7 @@
           <div
             v-for="item in validListings"
             :key="item.listingID"
-            @click="$router.push('/purchase/' + item.listingID)"
+            @click="$router.push('/listings/' + item.listingID)"
             class="bg-white border border-ink/10 flex flex-col cursor-pointer transition-all hover:border-ink/30 hover:shadow-lg group"
           >
             <!-- Image Container -->

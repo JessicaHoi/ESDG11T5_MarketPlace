@@ -1,11 +1,17 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
-  { path: '/', redirect: '/listings' },
+  { path: '/', redirect: '/login' },
+  { path: '/login', component: () => import('./views/buyer/Login.vue') },
+  { path: '/profile', component: () => import('./views/buyer/Profile.vue') },
   { path: '/listings', component: () => import('./views/buyer/ProductList.vue') },
+  { path: '/listings/:id', component: () => import('./views/buyer/ProductDetail.vue') },
   { path: '/orders', component: () => import('./views/buyer/OrderHistory.vue') },
   { path: '/purchase/:id', component: () => import('./views/buyer/Purchase.vue') },
   { path: '/orders/:id/dispute', component: () => import('./views/buyer/RaiseDispute.vue') },
+  { path: '/admin', component: () => import('./views/admin/Login.vue') },
+  { path: '/disputes', component: () => import('./views/admin/Disputes.vue') },
+  { path: '/disputes/:id', component: () => import('./views/admin/DisputeDetail.vue') },
   // Catch-all
   { path: '/:pathMatch(.*)*', redirect: '/listings' }
 ]

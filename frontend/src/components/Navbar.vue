@@ -9,7 +9,11 @@
         </div>
       </div>
       <div class="flex items-center gap-4">
-        <span v-if="user" class="text-sm font-mono text-slate border border-ink/10 px-3 py-1 bg-white">{{ user.name }}</span>
+        <router-link
+          v-if="user"
+          to="/profile"
+          class="text-sm font-mono text-slate border border-ink/10 px-3 py-1 bg-white hover:border-accent hover:text-accent transition-colors"
+        >{{ user.name }}</router-link>
       </div>
     </div>
   </nav>
