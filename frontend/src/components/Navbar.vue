@@ -4,6 +4,7 @@
       <div class="flex items-center gap-8">
         <router-link to="/" class="font-display font-extrabold text-xl tracking-tight">TradeNest</router-link>
         <div class="hidden md:flex gap-6">
+          <router-link to="/listings" class="text-sm font-semibold hover:text-accent transition-colors">Browse Products</router-link>
           <router-link to="/orders" class="text-sm font-semibold hover:text-accent transition-colors">My Orders</router-link>
         </div>
       </div>

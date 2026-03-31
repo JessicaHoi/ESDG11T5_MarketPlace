@@ -181,18 +181,42 @@
 </template>
 
 <script setup>
-import { ref, computed, watchEffect } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
-import { mockListings, mockUser } from '../../data/mockData.js'
-import { placeOrder } from '../../services/api.js'
+import { mockUser } from '../../data/mockData.js'
+import { placeOrder, fetchListingById } from '../../services/api.js'
 
 const route = useRoute()
 const router = useRouter()
 
 const listing = ref(null)
-watchEffect(() => {
-  listing.value = mockListings.find(l => l.id === parseInt(route.params.id)) || null
+const pageLoading = ref(true)
+const apiError    = ref(null)
+
+onMounted(async () => {
+  try {
+    const res = await fetchListingById(route.params.id)
+    if (res && res.data && res.data.listingName) {
+      const data = res.data
+      listing.value = {
+        id: data.listingID,
+        title: data.listingName,
+        price: data.listingPrice,
+        condition: data.listingCategory || 'General',
+        seller: 'External Seller',
+        sellerId: 2, // Required mock for functioning checkout downstream
+        image: data.listingImgUrl && data.listingImgUrl.length > 5 ? data.listingImgUrl : 'https://placehold.co/400x400/f2f2eb/1a1a1a?text=Product'
+      }
+    } else {
+      apiError.value = "Product could not be found."
+    }
+  } catch (err) {
+    apiError.value = "Failed to load product details from the server."
+    console.error(err)
+  } finally {
+    pageLoading.value = false
+  }
 })
 
 const negotiatedPrice = computed(() => route.query.price ? parseInt(route.query.price) : null)
@@ -211,7 +235,6 @@ const contact    = ref({ name: mockUser.name, email: mockUser.email, phone: '' }
 
 const processing  = ref(false)
 const success     = ref(false)
-const apiError    = ref(null)
 const orderResult = ref(null)
 
 const protections = [

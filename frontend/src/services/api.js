@@ -109,3 +109,16 @@ export function getDisputes() {
 export function getDispute(disputeID) {
   return get(`/dispute/${disputeID}`)
 }
+
+// ─── EXTERNAL: Listing Service (OutSystems) ──────────────────────────────────
+export async function fetchListings() {
+  const res = await fetch('https://personal-8vnud50n.outsystemscloud.com/Listing/rest/Listing/listing/')
+  if (!res.ok) throw new Error(`Listing API HTTP ${res.status}`)
+  return res.json()
+}
+
+export async function fetchListingById(listingID) {
+  const res = await fetch(`https://personal-8vnud50n.outsystemscloud.com/Listing/rest/Listing/listing/${listingID}/`)
+  if (!res.ok) throw new Error(`Listing API HTTP ${res.status}`)
+  return res.json()
+}

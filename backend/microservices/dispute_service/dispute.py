@@ -4,7 +4,7 @@ import os, time
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
-    'DATABASE_URL', 'mysql+mysqlconnector://root:root@localhost:3306/dispute'
+    'DATABASE_URL', 'mysql+mysqlconnector://root:root@localhost:3308/dispute'
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_recycle': 299}
