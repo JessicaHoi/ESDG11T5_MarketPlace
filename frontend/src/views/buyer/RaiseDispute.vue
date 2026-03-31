@@ -153,6 +153,7 @@ import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
 import { getOrder, raiseDispute, getAllPayments } from '../../services/api.js'
+import { saveDispute } from '../../data/disputeStore.js'
 
 const route  = useRoute()
 const router = useRouter()
@@ -249,7 +250,28 @@ async function submitDispute() {
       description:   form.value.description,
     })
 
-    disputeResult.value = result?.data ?? result
+    const data = result?.data ?? result
+    disputeResult.value = data
+
+    // Save to shared store so admin pages see it immediately
+    const deadline = new Date()
+    deadline.setDate(deadline.getDate() + 2)
+    saveDispute({
+      id:             `DIS-${data.disputeID}`,
+      orderID:        `ORD-${order.value.order_id}`,
+      buyerName:      mockUser.name,
+      sellerName:     `Seller #${order.value.seller_id}`,
+      listing:        order.value.order_details || `Listing #${order.value.listing_id}`,
+      amount:         order.value.agreed_price,
+      reason:         form.value.reason,
+      description:    form.value.description,
+      status:         'PENDING',
+      evidence:       form.value.files.map(f => f.name),
+      raisedAt:       new Date().toISOString().slice(0, 10),
+      deadline:       deadline.toISOString().slice(0, 10),
+      sellerResponse: null,
+    })
+
     success.value = true
   } catch (err) {
     apiError.value = err.message || 'Failed to submit dispute. Please try again.'

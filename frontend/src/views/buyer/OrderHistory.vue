@@ -41,11 +41,18 @@
             <div
               v-for="order in filteredOrders"
               :key="order.order_id"
-              class="bg-white border border-ink/10 p-6 hover:border-ink/30 transition-colors"
+              class="bg-white border border-ink/10 p-6 hover:border-ink/30 hover:shadow-sm transition-all cursor-pointer group"
+              @click="$router.push(`/orders/${order.order_id}`)"
             >
               <div class="flex gap-4">
                 <div class="w-20 h-20 bg-cream overflow-hidden flex-shrink-0 flex items-center justify-center">
-                  <span class="text-3xl">🛍</span>
+                  <img
+                    v-if="listingImages[order.listing_id]"
+                    :src="listingImages[order.listing_id]"
+                    :alt="order.order_details"
+                    class="w-full h-full object-cover"
+                  />
+                  <span v-else class="text-3xl">🛍</span>
                 </div>
 
                 <div class="flex-1 min-w-0">
@@ -78,7 +85,7 @@
                     <!-- Confirm receipt (only when RESERVED) -->
                     <button
                       v-if="order.status === 'RESERVED'"
-                      @click="handleConfirmReceipt(order)"
+                      @click.stop="handleConfirmReceipt(order)"
                       :disabled="confirmingID === order.order_id"
                       class="btn-secondary text-xs px-4 py-2"
                     >
@@ -88,7 +95,7 @@
                     <!-- Raise dispute (only when RESERVED) -->
                     <button
                       v-if="order.status === 'RESERVED'"
-                      @click="$router.push(`/orders/${order.order_id}/dispute`)"
+                      @click.stop="$router.push(`/orders/${order.order_id}/dispute`)"
                       class="btn-ghost text-xs px-4 py-2 text-red-600 hover:text-red-700"
                     >
                       Raise Dispute
@@ -125,10 +132,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onActivated } from 'vue'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
 import { getOrders, confirmOrder } from '../../services/api.js'
+import { getOrderStatusFromDispute } from '../../data/disputeStore.js'
 
 const orders      = ref([])
 const loading     = ref(true)
@@ -136,6 +144,7 @@ const apiError    = ref(null)
 const activeTab   = ref('all')
 const confirmingID = ref(null)
 const confirmError = ref({})
+const listingImages = ref({}) // listingID → listingImgUrl
 
 const tabs = [
   { label: 'All Orders',  value: 'all' },
@@ -151,15 +160,42 @@ const filteredOrders = computed(() => {
 
 onMounted(async () => {
   try {
-    const data = await getOrders()
-    // order-service returns an array directly
-    orders.value = Array.isArray(data) ? data : (data.orders ?? [])
+    const [ordersData, listingsData] = await Promise.all([
+      getOrders(),
+      fetch('/tmp.json').then(r => r.json()).catch(() => null),
+    ])
+    const rawOrders = Array.isArray(ordersData) ? ordersData : (ordersData.orders ?? [])
+    orders.value = applyDisputeOverrides(rawOrders)
+    // Build lookup map: listingID → listingImgUrl
+    const listings = listingsData?.data?.listings ?? []
+    listings.forEach(l => {
+      if (l.listingImgUrl && l.listingImgUrl.length > 5) {
+        listingImages.value[l.listingID] = l.listingImgUrl
+      }
+    })
   } catch (err) {
     apiError.value = err.message || 'Could not load orders.'
   } finally {
     loading.value = false
   }
 })
+
+// Re-apply dispute overrides every time the user navigates back to this page
+// (handles the case where admin resolved a dispute while user was elsewhere)
+onActivated(() => {
+  if (orders.value.length > 0) {
+    orders.value = applyDisputeOverrides(orders.value)
+  }
+})
+
+function applyDisputeOverrides(rawOrders) {
+  return rawOrders.map(order => {
+    if (order.status !== 'DISPUTED') return order
+    const overrideStatus = getOrderStatusFromDispute(order.order_id)
+    if (!overrideStatus) return order
+    return { ...order, status: overrideStatus }
+  })
+}
 
 async function handleConfirmReceipt(order) {
   confirmingID.value = order.order_id

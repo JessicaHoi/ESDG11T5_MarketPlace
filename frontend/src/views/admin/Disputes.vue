@@ -97,11 +97,16 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import AdminNavbar from '../../components/AdminNavbar.vue'
 import { mockDisputes } from '../../data/mockData.js'
+import { getMergedDisputes } from '../../data/disputeStore.js'
 
-const disputes = ref([...mockDisputes])
+const disputes = ref([])
+
+onMounted(() => {
+  disputes.value = getMergedDisputes(mockDisputes)
+})
 const activeTab = ref('all')
 const search = ref('')
 

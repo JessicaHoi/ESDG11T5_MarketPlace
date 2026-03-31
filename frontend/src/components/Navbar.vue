@@ -14,6 +14,11 @@
           to="/profile"
           class="text-sm font-mono text-slate border border-ink/10 px-3 py-1 bg-white hover:border-accent hover:text-accent transition-colors"
         >{{ user.name }}</router-link>
+        <button
+          v-if="user"
+          @click="$router.push('/login')"
+          class="text-sm font-mono text-red-400 border border-red-200 px-3 py-1 hover:bg-red-50 hover:text-red-600 hover:border-red-300 transition-colors"
+        >Logout</button>
       </div>
     </div>
   </nav>

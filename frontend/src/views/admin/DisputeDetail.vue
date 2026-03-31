@@ -51,7 +51,7 @@
                 <div class="bg-cream p-4">
                   <p class="section-label text-muted mb-2">Seller</p>
                   <div class="flex items-center gap-2">
-                    <div class="w-8 h-8 bg-cream text-white font-display font-bold text-xs flex items-center justify-center">
+                    <div class="w-8 h-8 bg-ink text-paper font-display font-bold text-xs flex items-center justify-center">
                       {{ dispute.sellerName.charAt(0) }}
                     </div>
                     <div>
@@ -216,15 +216,20 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AdminNavbar from '../../components/AdminNavbar.vue'
 import { mockDisputes } from '../../data/mockData.js'
+import { getMergedDisputes, updateDisputeStatus } from '../../data/disputeStore.js'
 
 const route = useRoute()
 const router = useRouter()
 
-const disputes = ref([...mockDisputes])
+const disputes = ref([])
+
+onMounted(() => {
+  disputes.value = getMergedDisputes(mockDisputes)
+})
 const dispute = computed(() => disputes.value.find(d => d.id === route.params.id))
 
 const adminNotes = ref('')
@@ -253,6 +258,8 @@ async function decide(outcome) {
 
   const idx = disputes.value.findIndex(d => d.id === route.params.id)
   if (idx !== -1) disputes.value[idx] = { ...disputes.value[idx], status: outcome }
+  // Persist decision — pass mockDisputes so seeded disputes can also be persisted
+  updateDisputeStatus(route.params.id, outcome, mockDisputes)
 
   deciding.value = false
   lastDecision.value = outcome
@@ -262,5 +269,6 @@ async function decide(outcome) {
 function resetStatus() {
   const idx = disputes.value.findIndex(d => d.id === route.params.id)
   if (idx !== -1) disputes.value[idx] = { ...disputes.value[idx], status: 'PENDING' }
+  updateDisputeStatus(route.params.id, 'PENDING', mockDisputes)
 }
 </script>

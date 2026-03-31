@@ -36,6 +36,14 @@
               <span class="font-mono text-sm">{{ mockUser.email }}</span>
             </div>
             <div class="flex justify-between items-center py-3 border-b border-ink/5">
+              <span class="text-xs font-mono text-muted uppercase tracking-wider">Phone</span>
+              <span class="font-mono text-sm">{{ mockUser.phone || '—' }}</span>
+            </div>
+            <div class="flex justify-between items-center py-3 border-b border-ink/5">
+              <span class="text-xs font-mono text-muted uppercase tracking-wider">Address</span>
+              <span class="font-mono text-sm text-right max-w-xs">{{ mockUser.address || '—' }}</span>
+            </div>
+            <div class="flex justify-between items-center py-3 border-b border-ink/5">
               <span class="text-xs font-mono text-muted uppercase tracking-wider">User ID</span>
               <span class="font-mono text-sm text-muted">#{{ mockUser.id }}</span>
             </div>

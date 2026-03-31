@@ -39,10 +39,18 @@
 
           <!-- Details -->
           <div class="flex flex-col">
-            <!-- Category + status -->
+            <!-- Category + status/order badge -->
             <div class="flex items-start justify-between mb-2">
               <span class="section-label text-accent">{{ listing.listingCategory || 'General' }}</span>
-              <span class="status-badge bg-cream text-ink font-mono text-xs">
+              <!-- Order status badge takes priority over listing status -->
+              <span
+                v-if="orderBadge"
+                class="status-badge font-mono text-xs px-3 py-1"
+                :class="orderBadge.class"
+              >
+                {{ orderBadge.label }}
+              </span>
+              <span v-else class="status-badge bg-cream text-ink font-mono text-xs">
                 {{ listing.listingStatus || 'ACTIVE' }}
               </span>
             </div>
@@ -115,6 +123,14 @@
             <!-- Actions -->
             <div class="flex gap-3 mt-auto">
               <button
+                @click="negotiate"
+                :disabled="listing.listingStockQty <= 0"
+                class="btn-secondary flex-1"
+                :class="{ 'opacity-50 cursor-not-allowed': listing.listingStockQty <= 0 }"
+              >
+                Negotiate
+              </button>
+              <button
                 @click="buyNow"
                 :disabled="listing.listingStockQty <= 0"
                 class="btn-primary flex-1"
@@ -132,11 +148,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
-import { fetchListingById } from '../../services/api.js'
+import { fetchListingById, getOrders } from '../../services/api.js'
 
 const route  = useRoute()
 const router = useRouter()
@@ -144,22 +160,53 @@ const router = useRouter()
 const listing  = ref(null)
 const loading  = ref(true)
 const apiError = ref(null)
+const orders   = ref([])
+
+// Find an order matching this listing for the current user
+const matchingOrder = computed(() => {
+  if (!listing.value) return null
+  return orders.value.find(
+    o => String(o.listing_id) === String(listing.value.listingID)
+  ) || null
+})
+
+const orderBadge = computed(() => {
+  if (!matchingOrder.value) return null
+  if (matchingOrder.value.status === 'RESERVED') {
+    return { label: 'Ordered — Pending Delivery', class: 'bg-amber-100 text-amber-700' }
+  }
+  if (matchingOrder.value.status === 'COMPLETED') {
+    return { label: 'Previously Purchased', class: 'bg-sage/20 text-sage' }
+  }
+  if (matchingOrder.value.status === 'DISPUTED') {
+    return { label: 'Dispute In Progress', class: 'bg-red-100 text-red-600' }
+  }
+  return null
+})
 
 onMounted(async () => {
   try {
-    const res = await fetchListingById(route.params.id)
-    const data = res?.data ?? null
+    const [listingRes, ordersData] = await Promise.all([
+      fetchListingById(route.params.id),
+      getOrders().catch(() => []),
+    ])
+    const data = listingRes?.data ?? null
     if (data && data.listingName) {
       listing.value = data
     } else {
       apiError.value = 'Listing not found.'
     }
+    orders.value = Array.isArray(ordersData) ? ordersData : (ordersData.orders ?? [])
   } catch (err) {
     apiError.value = err.message || 'Failed to load listing.'
   } finally {
     loading.value = false
   }
 })
+
+function negotiate() {
+  router.push(`/messages/${listing.value.listingID}`)
+}
 
 function buyNow() {
   router.push(`/purchase/${listing.value.listingID}`)

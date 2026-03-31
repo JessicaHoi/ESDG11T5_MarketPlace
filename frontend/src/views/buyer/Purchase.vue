@@ -42,6 +42,17 @@
                     <p class="text-xs text-muted font-mono">Delivered to your address</p>
                   </div>
                 </label>
+                <!-- Shipping address box — shown when shipping is selected -->
+                <div v-if="delivery === 'shipping'" class="mt-2 ml-1">
+                  <label class="section-label block mb-2">Delivery Address</label>
+                  <textarea
+                    v-model="shippingAddr"
+                    class="input-field resize-none text-sm font-mono"
+                    rows="2"
+                    placeholder="Enter your delivery address"
+                  ></textarea>
+                  <p class="text-xs text-muted font-mono mt-1">Pre-filled from your profile — edit if needed.</p>
+                </div>
               </div>
             </div>
 
@@ -58,7 +69,7 @@
                 <div>
                   <label class="section-label block mb-2">Card Number</label>
                   <div class="input-field flex items-center justify-between">
-                    <input v-model="cardNumber" type="text" class="flex-1 font-mono text-sm outline-none bg-transparent" placeholder="4242 4242 4242 4242" maxlength="19" />
+                    <input :value="cardNumber" @input="formatCardNumber" type="text" inputmode="numeric" class="flex-1 font-mono text-sm outline-none bg-transparent" placeholder="4242 4242 4242 4242" maxlength="19" />
                     <span class="text-muted text-lg">💳</span>
                   </div>
                 </div>
@@ -231,7 +242,13 @@ const cardNumber = ref('')
 const cardExpiry = ref('')
 const cardCvc    = ref('')
 const cardName   = ref('')
-const contact    = ref({ name: mockUser.name, email: mockUser.email, phone: '' })
+const contact      = ref({ name: mockUser.name, email: mockUser.email, phone: mockUser.phone || '' })
+const shippingAddr = ref(mockUser.address || '')
+
+function formatCardNumber(e) {
+  let value = e.target.value.replace(/\D/g, '').slice(0, 16)
+  cardNumber.value = value.replace(/(\d{4})(?=\d)/g, '$1 ')
+}
 
 const processing  = ref(false)
 const success     = ref(false)

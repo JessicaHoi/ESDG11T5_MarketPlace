@@ -84,13 +84,13 @@
         <div class="mt-8 pt-6 border-t border-ink/10">
           <p class="text-xs text-muted text-center mb-3 font-mono">Demo credentials</p>
           <button @click="fillDemo" class="w-full border border-ink/20 py-2 text-xs font-mono text-slate hover:border-accent hover:text-accent transition-colors">
-            anjali@smu.edu.sg / password123
+            mark@tradenest.sg / password123
           </button>
         </div>
 
         <p class="mt-6 text-center text-xs text-muted">
           Admin?
-          <router-link to="/admin/login" class="text-accent hover:underline ml-1">Admin login →</router-link>
+          <router-link to="/admin" class="text-accent hover:underline ml-1">Admin login →</router-link>
         </p>
       </div>
     </div>
@@ -107,7 +107,7 @@ const error = ref('')
 const loading = ref(false)
 
 function fillDemo() {
-  form.value.email = 'anjali@smu.edu.sg'
+  form.value.email = 'mark@tradenest.sg'
   form.value.password = 'password123'
 }
 
@@ -116,7 +116,7 @@ async function handleLogin() {
   loading.value = true
   await new Promise(r => setTimeout(r, 800))
 
-  if (form.value.email === 'anjali@smu.edu.sg' && form.value.password === 'password123') {
+  if (form.value.email === 'mark@tradenest.sg' && form.value.password === 'password123') {
     router.push('/listings')
   } else {
     error.value = 'Invalid email or password.'
