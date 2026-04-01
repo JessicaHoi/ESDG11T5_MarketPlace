@@ -137,8 +137,13 @@ def create_order(order_data: OrderCreate):
 
 
 @app.get("/orders", response_model=List[Order])
-def get_all_orders():
-    return orders_db
+def get_all_orders(sellerID: Optional[int] = None, buyerID: Optional[int] = None):
+    result = orders_db
+    if sellerID is not None:
+        result = [o for o in result if o.seller_id == sellerID]
+    if buyerID is not None:
+        result = [o for o in result if o.buyer_id == buyerID]
+    return result
 
 
 @app.get("/orders/{order_id}", response_model=Order)

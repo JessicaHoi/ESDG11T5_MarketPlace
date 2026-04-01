@@ -2,7 +2,19 @@
   <div class="min-h-screen bg-paper">
     <Navbar :user="mockUser" />
 
-    <div class="pt-16">
+    <!-- Reservation countdown banner -->
+    <div
+      class="fixed top-16 left-0 right-0 z-40 flex items-center justify-between px-6 py-2 text-xs font-mono transition-colors"
+      :class="timerUrgent ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'"
+    >
+      <span>🔒 Item reserved for you</span>
+      <div class="flex items-center gap-2">
+        <span v-if="timerUrgent" class="animate-pulse">⚠ Expiring soon!</span>
+        <span class="font-bold tracking-widest text-sm">{{ formattedTime }}</span>
+      </div>
+    </div>
+
+    <div class="pt-24">
       <div class="max-w-4xl mx-auto px-6 pt-8">
         <button @click="$router.back()" class="section-label text-muted hover:text-accent transition-colors">← Back</button>
       </div>
@@ -89,9 +101,9 @@
                 </div>
               </div>
 
-              <div class="mt-3 bg-amber-50 border border-amber-200 p-2 text-xs text-amber-700 font-mono">
+              <!-- <div class="mt-3 bg-amber-50 border border-amber-200 p-2 text-xs text-amber-700 font-mono">
                 ℹ Demo mode: uses Stripe test card (pm_card_visa)
-              </div>
+              </div> -->
 
               <div class="mt-4 bg-sage/5 border border-sage/20 p-3 flex gap-2">
                 <span class="text-sage">🔒</span>
@@ -168,6 +180,16 @@
     </div>
   </div>
 
+  <!-- Validation error modal -->
+  <div v-if="validationError" class="fixed inset-0 bg-ink/60 flex items-center justify-center z-50 p-6" @click.self="validationError = ''">
+    <div class="bg-paper max-w-sm w-full p-8 text-center">
+      <div class="w-14 h-14 bg-red-100 flex items-center justify-center mx-auto mb-4 text-2xl">⚠</div>
+      <h2 class="font-display font-extrabold text-xl mb-2 text-ink">Missing Payment Details</h2>
+      <p class="text-slate text-sm mb-6 leading-relaxed">{{ validationError }}</p>
+      <button @click="validationError = ''" class="btn-primary w-full">Go Back &amp; Fix</button>
+    </div>
+  </div>
+
   <div v-if="success" class="fixed inset-0 bg-ink/60 flex items-center justify-center z-50 p-6">
     <div class="bg-paper max-w-sm w-full p-8 text-center">
       <div class="w-16 h-16 bg-sage/20 flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
@@ -192,11 +214,24 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
 import { placeOrder, fetchListingById } from '../../services/api.js'
+
+// ─── Reservation timer (10 minutes) ──────────────────────────────────────────
+const RESERVATION_SECONDS = 10 * 60
+const timeLeft  = ref(RESERVATION_SECONDS)
+let timerHandle = null
+
+const formattedTime = computed(() => {
+  const m = Math.floor(timeLeft.value / 60).toString().padStart(2, '0')
+  const s = (timeLeft.value % 60).toString().padStart(2, '0')
+  return `${m}:${s}`
+})
+
+const timerUrgent = computed(() => timeLeft.value <= 60)
 
 const route = useRoute()
 const router = useRouter()
@@ -206,6 +241,16 @@ const pageLoading = ref(true)
 const apiError    = ref(null)
 
 onMounted(async () => {
+  // Start reservation countdown
+  timerHandle = setInterval(() => {
+    timeLeft.value--
+    if (timeLeft.value <= 0) {
+      clearInterval(timerHandle)
+      // Reservation expired — redirect back to listing
+      router.replace(`/listings/${route.params.id}`)
+    }
+  }, 1000)
+
   try {
     const res = await fetchListingById(route.params.id)
     if (res && res.data && res.data.listingName) {
@@ -245,14 +290,26 @@ const cardName   = ref('')
 const contact      = ref({ name: mockUser.name, email: mockUser.email, phone: mockUser.phone || '' })
 const shippingAddr = ref(mockUser.address || '')
 
+onUnmounted(() => clearInterval(timerHandle))
+
 function formatCardNumber(e) {
   let value = e.target.value.replace(/\D/g, '').slice(0, 16)
   cardNumber.value = value.replace(/(\d{4})(?=\d)/g, '$1 ')
 }
 
-const processing  = ref(false)
-const success     = ref(false)
-const orderResult = ref(null)
+const processing    = ref(false)
+const success       = ref(false)
+const orderResult   = ref(null)
+const validationError = ref('')
+
+function validatePayment() {
+  const rawDigits = cardNumber.value.replace(/\s/g, '')
+  if (rawDigits.length !== 16)      return 'Please enter a valid 16-digit card number.'
+  if (cardExpiry.value.length < 4)  return 'Please enter a valid expiry date (MM / YY).'
+  if (cardCvc.value.length < 3)     return 'Please enter a valid CVC (3–4 digits).'
+  if (!cardName.value.trim())       return 'Please enter the name on your card.'
+  return ''
+}
 
 const protections = [
   'Escrow payment protection',
@@ -263,6 +320,13 @@ const protections = [
 
 async function handlePayment() {
   if (!listing.value) return
+  // Validate payment fields first
+  const err = validatePayment()
+  if (err) {
+    validationError.value = err
+    return
+  }
+  validationError.value = ''
   apiError.value = null
   processing.value = true
 
@@ -281,6 +345,7 @@ async function handlePayment() {
 
     orderResult.value = result
     success.value = true
+    clearInterval(timerHandle) // stop the timer on successful payment
   } catch (err) {
     apiError.value = err.message || 'Something went wrong. Please try again.'
   } finally {

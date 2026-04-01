@@ -99,7 +99,7 @@ export const mockListings = [
 
 export const mockOrders = [
   {
-    id: 'ORD-001',
+    id: 'ORD-003',
     listingId: 3,
     listing: 'Nintendo Switch OLED (White)',
     seller: 'Marcus L.',
@@ -125,7 +125,7 @@ export const mockOrders = [
     image: 'https://images.unsplash.com/photo-1611186871525-9c1dcb96c5c2?w=400&q=80',
   },
   {
-    id: 'ORD-003',
+    id: 'ORD-001',
     listingId: 1,
     listing: 'Sony WH-1000XM5 Headphones',
     seller: 'Ryan T.',
@@ -201,4 +201,13 @@ export const mockAdmin = {
   name: 'Admin User',
   email: 'admin@tradenest.sg',
   role: 'admin',
+}
+
+export const mockSeller = {
+  id: 2,
+  name: 'Ryan T.',
+  email: 'ryan@tradenest.sg',
+  phone: '+65 9876 5432',
+  role: 'seller',
+  address: 'Blk 456 Tampines Street 12, #03-08, Singapore 521456',
 }

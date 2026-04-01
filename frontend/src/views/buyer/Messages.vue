@@ -111,15 +111,6 @@
               </div>
             </div>
 
-            <!-- Typing indicator -->
-            <div v-if="sellerTyping" class="flex items-center gap-2">
-              <div class="w-7 h-7 bg-white border border-ink/10 text-ink font-display font-bold text-xs flex items-center justify-center flex-shrink-0">
-                S
-              </div>
-              <div class="bg-white border border-ink/10 px-4 py-2.5 flex items-center gap-1">
-                <span v-for="i in 3" :key="i" class="w-1.5 h-1.5 bg-muted rounded-full animate-bounce" :style="{ animationDelay: `${i * 0.15}s` }"></span>
-              </div>
-            </div>
           </div>
 
           <!-- Agreed — proceed to purchase -->
@@ -255,11 +246,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, computed } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
-import { fetchListingById } from '../../services/api.js'
+import { fetchListingById, sendMessage as sendMessageToBackend, getMessagesByOrder } from '../../services/api.js'
+import { getDeal } from '../../data/negotiationStore.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -267,51 +259,102 @@ const router = useRouter()
 const listing = ref(null)
 
 onMounted(async () => {
+  // Use listingID as the conversation key so each product has its own chat history
+  const listingID = parseInt(route.params.id)
+
   try {
-    const res = await fetchListingById(route.params.id)
-    listing.value = res?.data ?? null
+    const [listingRes, messagesRes] = await Promise.all([
+      fetchListingById(listingID),
+      getMessagesByOrder(listingID).catch(() => []),
+    ])
+    listing.value = listingRes?.data ?? null
+
+    // Load real messages from backend
+    const raw = Array.isArray(messagesRes) ? messagesRes : []
+    messages.value = raw.map(m => ({
+      id:          m.messageID,
+      sender:      m.senderID === mockUser.id ? 'buyer' : 'seller',
+      type:        m.messageType || 'text',
+      text:        m.content,
+      offerAmount: m.offerAmount,
+      time:        m.sentAt
+        ? new Date(m.sentAt).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' })
+        : timestamp(),
+    }))
+    // Restore agreed price — check messages first, then localStorage
+    const agreement = messages.value.find(m => m.type === 'agreement')
+    if (agreement) {
+      agreedPrice.value = agreement.offerAmount
+    } else {
+      const deal = getDeal(listingID)
+      if (deal?.price) {
+        agreedPrice.value = deal.price
+        currentOffer.value = deal.price
+      }
+    }
   } catch (err) {
-    console.error('Failed to load listing:', err)
+    console.error('Failed to load listing or messages:', err)
   }
+  await scrollToBottom()
+
+  // Poll for new messages every 3 seconds
+  pollHandle = setInterval(async () => {
+    try {
+      const fresh = await getMessagesByOrder(listingID)
+      const raw = Array.isArray(fresh) ? fresh : []
+      const existingIds = new Set(messages.value.map(m => m.id))
+      const newMsgs = raw
+        .filter(m =>
+          !existingIds.has(m.messageID) &&
+          !localPendingContents.has(m.content)
+        )
+        .map(m => ({
+          id:          m.messageID,
+          sender:      m.senderID === mockUser.id ? 'buyer' : 'seller',
+          type:        m.messageType || 'text',
+          text:        m.content,
+          offerAmount: m.offerAmount,
+          time:        m.sentAt
+            ? new Date(m.sentAt).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' })
+            : timestamp(),
+        }))
+      if (newMsgs.length > 0) {
+        messages.value.push(...newMsgs)
+        await scrollToBottom()
+      }
+
+      // Check localStorage for seller-confirmed deal (works even without DB messageType support)
+      if (!agreedPrice.value) {
+        const deal = getDeal(listingID)
+        if (deal?.price) {
+          agreedPrice.value = deal.price
+          currentOffer.value = deal.price
+        }
+      }
+    } catch {
+      // silently ignore poll errors
+    }
+  }, 3000)
 })
+
+onUnmounted(() => clearInterval(pollHandle))
 
 const messagesContainer = ref(null)
 const newMessage = ref('')
 const showOfferInput = ref(false)
 const offerAmount = ref('')
-const sellerTyping = ref(false)
 const agreedPrice = ref(null)
 const currentOffer = ref(null)
 
-let msgCounter = 10
+let pollHandle = null
+// Track locally-sent messages by content to deduplicate when they return from backend
+const localPendingContents = new Set()
 
 function timestamp() {
   return new Date().toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' })
 }
 
-const messages = ref([
-  {
-    id: 1,
-    sender: 'seller',
-    type: 'text',
-    text: 'Hi! Yes, this item is still available. Feel free to ask any questions.',
-    time: '10:02 AM',
-  },
-  {
-    id: 2,
-    sender: 'buyer',
-    type: 'text',
-    text: "Hi! I'm interested. Has the item been used heavily?",
-    time: '10:04 AM',
-  },
-  {
-    id: 3,
-    sender: 'seller',
-    type: 'text',
-    text: "Not at all — I've only used it a handful of times. It's practically brand new.",
-    time: '10:05 AM',
-  },
-])
+const messages = ref([])
 
 const lastSellerOfferId = computed(() => {
   const sellerOffers = messages.value.filter(m => m.sender === 'seller' && m.type === 'offer')
@@ -325,48 +368,54 @@ async function scrollToBottom() {
   }
 }
 
+// Fire-and-forget: persist message to backend, don't block the UI
+async function persistToBackend(content, messageType = 'text', offerAmount = null) {
+  const sellerID  = listing.value?.sellerID ?? 2
+  const listingID = parseInt(route.params.id) // use listingID as orderID for conversation isolation
+  try {
+    await sendMessageToBackend({
+      orderID:     listingID,
+      senderID:    mockUser.id,
+      receiverID:  sellerID,
+      content,
+      messageType,
+      offerAmount,
+    })
+  } catch (err) {
+    // Best-effort — silently ignore if backend is unavailable
+    console.warn('[Messaging] Backend unavailable, message saved locally only:', err.message)
+  }
+}
+
+function addLocalMessage(msg) {
+  // Track content so the poller doesn't re-add it when it comes back from DB
+  localPendingContents.add(msg.content ?? msg.text)
+  messages.value.push(msg)
+  scrollToBottom()
+}
+
 function sendMessage() {
   if (!newMessage.value.trim()) return
-  messages.value.push({
-    id: ++msgCounter,
-    sender: 'buyer',
-    type: 'text',
-    text: newMessage.value,
-    time: timestamp(),
-  })
+  const text = newMessage.value
   newMessage.value = ''
-  scrollToBottom()
-  simulateSellerReply()
+  addLocalMessage({ id: `local_${Date.now()}`, sender: 'buyer', type: 'text', text, content: text, time: timestamp() })
+  persistToBackend(text)
 }
 
 function sendQuickMessage(text) {
-  messages.value.push({
-    id: ++msgCounter,
-    sender: 'buyer',
-    type: 'text',
-    text,
-    time: timestamp(),
-  })
-  scrollToBottom()
-  simulateSellerReply()
+  addLocalMessage({ id: `local_${Date.now()}`, sender: 'buyer', type: 'text', text, content: text, time: timestamp() })
+  persistToBackend(text)
 }
 
 function sendOffer() {
   if (!offerAmount.value || !listing.value) return
   const amount = parseInt(offerAmount.value)
   currentOffer.value = amount
-  messages.value.push({
-    id: ++msgCounter,
-    sender: 'buyer',
-    type: 'offer',
-    offerAmount: amount,
-    text: `Offer: $${amount}`,
-    time: timestamp(),
-  })
+  const content = `Offer: ${amount}`
   offerAmount.value = ''
   showOfferInput.value = false
-  scrollToBottom()
-  simulateSellerCounterOffer(amount)
+  addLocalMessage({ id: `local_${Date.now()}`, sender: 'buyer', type: 'offer', offerAmount: amount, text: content, content, time: timestamp() })
+  persistToBackend(content, 'offer', amount)
 }
 
 function triggerCounterOffer() {
@@ -376,75 +425,9 @@ function triggerCounterOffer() {
 function acceptOffer(amount) {
   agreedPrice.value = amount
   currentOffer.value = amount
-  messages.value.push({
-    id: ++msgCounter,
-    sender: 'buyer',
-    type: 'agreement',
-    offerAmount: amount,
-    text: `Deal agreed at $${amount}`,
-    time: timestamp(),
-  })
-  scrollToBottom()
-}
-
-async function simulateSellerReply() {
-  sellerTyping.value = true
-  await new Promise(r => setTimeout(r, 1500))
-  sellerTyping.value = false
-  const replies = [
-    'Sure, happy to answer any questions!',
-    'Yes, the item is in great condition.',
-    'I can do a meetup near Jurong East MRT.',
-    'That works for me! When are you free?',
-  ]
-  messages.value.push({
-    id: ++msgCounter,
-    sender: 'seller',
-    type: 'text',
-    text: replies[Math.floor(Math.random() * replies.length)],
-    time: timestamp(),
-  })
-  scrollToBottom()
-}
-
-async function simulateSellerCounterOffer(buyerOffer) {
-  sellerTyping.value = true
-  await new Promise(r => setTimeout(r, 2000))
-  sellerTyping.value = false
-
-  if (!listing.value) return
-  const listed = listing.value.listingPrice
-  const diff = listed - buyerOffer
-
-  if (diff <= 10) {
-    agreedPrice.value = buyerOffer
-    messages.value.push({
-      id: ++msgCounter,
-      sender: 'seller',
-      type: 'agreement',
-      offerAmount: buyerOffer,
-      text: `Deal agreed at $${buyerOffer}`,
-      time: timestamp(),
-    })
-  } else {
-    const counter = Math.round((listed + buyerOffer) / 2)
-    messages.value.push({
-      id: ++msgCounter,
-      sender: 'seller',
-      type: 'offer',
-      offerAmount: counter,
-      text: `Counter offer: $${counter}`,
-      time: timestamp(),
-    })
-    messages.value.push({
-      id: ++msgCounter,
-      sender: 'seller',
-      type: 'text',
-      text: `How about $${counter}? That's my best offer given the condition.`,
-      time: timestamp(),
-    })
-  }
-  scrollToBottom()
+  const content = `Deal agreed at ${amount}`
+  addLocalMessage({ id: `local_${Date.now()}`, sender: 'buyer', type: 'agreement', offerAmount: amount, text: content, content, time: timestamp() })
+  persistToBackend(content, 'agreement', amount)
 }
 
 function proceedToPurchase() {

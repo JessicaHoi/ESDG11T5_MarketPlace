@@ -3,6 +3,7 @@
     "listings": [
       {
         "listingID": 1,
+        "sellerID": 2,
         "listingStatus": "ACTIVE",
         "listingName": "Sony WH-1000XM5 Headphones",
         "listingCategory": "Electronics",
@@ -16,6 +17,7 @@
       },
       {
         "listingID": 3,
+        "sellerID": 2,
         "listingStatus": "ACTIVE",
         "listingName": "Nintendo Switch OLED (White)",
         "listingCategory": "Gaming",
@@ -29,6 +31,7 @@
       },
       {
         "listingID": 6,
+        "sellerID": 2,
         "listingStatus": "ACTIVE",
         "listingName": "MacBook Air M2 13\" 256GB",
         "listingCategory": "Electronics",
@@ -42,6 +45,7 @@
       },
       {
         "listingID": 11,
+        "sellerID": 2,
         "listingStatus": "ACTIVE",
         "listingName": "Modern Sofa",
         "listingCategory": "Furniture",
@@ -55,6 +59,7 @@
       },
       {
         "listingID": 16,
+        "sellerID": 2,
         "listingStatus": "ACTIVE",
         "listingName": "Canon EOS M50 Mark II Camera",
         "listingCategory": "Electronics",
@@ -68,6 +73,7 @@
       },
       {
         "listingID": 17,
+        "sellerID": 2,
         "listingStatus": "ACTIVE",
         "listingName": "Dyson V11 Vacuum Cleaner",
         "listingCategory": "Home",
@@ -81,6 +87,7 @@
       },
       {
         "listingID": 18,
+        "sellerID": 2,
         "listingStatus": "ACTIVE",
         "listingName": "IKEA KALLAX Shelf Unit 2x4",
         "listingCategory": "Furniture",
@@ -94,6 +101,7 @@
       },
       {
         "listingID": 19,
+        "sellerID": 2,
         "listingStatus": "ACTIVE",
         "listingName": "Ergonomic Office Chair",
         "listingCategory": "Furniture",

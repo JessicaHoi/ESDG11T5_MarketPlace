@@ -165,6 +165,8 @@ onMounted(async () => {
       fetch('/tmp.json').then(r => r.json()).catch(() => null),
     ])
     const rawOrders = Array.isArray(ordersData) ? ordersData : (ordersData.orders ?? [])
+    // Sort newest first
+    rawOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     orders.value = applyDisputeOverrides(rawOrders)
     // Build lookup map: listingID → listingImgUrl
     const listings = listingsData?.data?.listings ?? []
