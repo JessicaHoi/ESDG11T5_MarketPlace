@@ -316,6 +316,7 @@ services:
       - notification-service
       - place-order-service
       - raise-dispute-service
+      - evidence-service
     networks:
       - marketplace_network
 

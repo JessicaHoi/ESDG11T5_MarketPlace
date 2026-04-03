@@ -167,6 +167,10 @@ export function getEvidence(evidenceID) {
   return get(`/evidence/${evidenceID}`)
 }
 
+export function uploadEvidence(payload) {
+  return post('/evidence', payload)
+}
+
 // ─── EXTERNAL: Listing Service (OutSystems) ─────────────────────────────────
 export async function fetchListings() {
   const res = await fetch('https://personal-8vnud50n.outsystemscloud.com/Listing/rest/Listing/listing/')

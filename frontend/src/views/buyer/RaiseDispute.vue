@@ -44,7 +44,7 @@
 
           <form @submit.prevent="submitDispute" class="space-y-6">
             <div class="bg-white border border-ink/10 p-6">
-              <p class="section-label mb-4">Reason for Dispute</p>
+              <p class="section-label mb-4">Reason for Dispute <span class="text-red-500">*</span></p>
               <div class="space-y-2">
                 <label
                   v-for="reason in reasons" :key="reason.value"
@@ -58,11 +58,17 @@
                   </div>
                 </label>
               </div>
+              <p v-if="submitAttempted && !form.reason" class="text-red-500 text-xs font-mono mt-2">
+                ⚠ Reason for dispute is mandatory.
+              </p>
             </div>
 
             <div class="bg-white border border-ink/10 p-6">
-              <p class="section-label mb-4">Describe the Issue</p>
-              <textarea v-model="form.description" class="input-field resize-none" rows="5" placeholder="Please describe what happened in detail..." required></textarea>
+              <p class="section-label mb-4">Describe the Issue <span class="text-red-500">*</span></p>
+              <textarea v-model="form.description" class="input-field resize-none" rows="5" placeholder="Please describe what happened in detail..."></textarea>
+              <p v-if="submitAttempted && !form.description.trim()" class="text-red-500 text-xs font-mono mt-2">
+                ⚠ Description is mandatory.
+              </p>
               <p class="text-xs text-muted font-mono mt-2 text-right">{{ form.description.length }}/500</p>
             </div>
 
@@ -86,11 +92,13 @@
               <div v-if="form.files.length > 0" class="mt-4 space-y-2">
                 <div v-for="(file, i) in form.files" :key="i" class="flex items-center justify-between bg-cream px-4 py-2">
                   <div class="flex items-center gap-2">
-                    <span class="text-sm">{{ fileIcon(file.name) }}</span>
+                    <img v-if="isImage(file)" :src="getPreviewURL(file)" class="w-8 h-8 object-cover border border-ink/10" alt="preview" />
+                    <span v-else class="text-sm">{{ fileIcon(file.name) }}</span>
                     <span class="font-mono text-xs text-slate">{{ file.name }}</span>
                   </div>
                   <div class="flex items-center gap-3">
                     <span class="font-mono text-xs text-muted">{{ formatSize(file.size) }}</span>
+                    <button type="button" @click.prevent="previewFile(file)" class="text-accent hover:text-accent/80 text-xs underline">Preview</button>
                     <button type="button" @click="removeFile(i)" class="text-red-400 hover:text-red-600 text-xs">✕</button>
                   </div>
                 </div>
@@ -113,7 +121,7 @@
               <button
                 type="submit"
                 class="flex-1 bg-red-600 text-white font-display font-semibold px-6 py-3 hover:bg-red-700 transition-colors text-sm tracking-wide uppercase"
-                :disabled="!canSubmit || submitting"
+                :disabled="submitting"
               >{{ submitting ? 'Submitting...' : 'Submit Dispute' }}</button>
             </div>
           </form>
@@ -142,10 +150,19 @@
         </div>
         <div class="flex justify-between text-xs font-mono">
           <span class="text-muted">Payment status</span>
-          <span class="text-ink">{{ disputeResult?.paymentStatus }}</span>
+          <span class="text-ink">{{ disputeResult?.paymentStatus === 'NOT_FROZEN' ? 'FROZEN' : disputeResult?.paymentStatus }}</span>
         </div>
       </div>
       <button @click="$router.push('/orders')" class="btn-primary w-full">Back to Orders</button>
+    </div>
+  </div>
+
+  <!-- Preview Modal -->
+  <div v-if="previewModalFile" class="fixed inset-0 bg-ink/90 flex items-center justify-center z-50 p-6" @click.self="previewModalFile = null">
+    <button @click="previewModalFile = null" class="absolute top-6 right-6 text-white text-2xl hover:text-accent">✕</button>
+    <div class="max-w-4xl max-h-[80vh]">
+      <img v-if="isImage(previewModalFile)" :src="getPreviewURL(previewModalFile)" class="max-w-full max-h-[70vh] object-contain" />
+      <div v-else class="bg-paper p-12 text-center"><p class="text-5xl mb-4">{{ fileIcon(previewModalFile.name) }}</p><p class="font-display font-semibold">{{ previewModalFile.name }}</p></div>
     </div>
   </div>
 </template>
@@ -212,6 +229,23 @@ function fileIcon(name) {
   if (name.match(/\.pdf$/i)) return '📄'
   return '📎'
 }
+
+const filePreviews = new Map()
+function getPreviewURL(file) {
+  if (!filePreviews.has(file)) {
+    filePreviews.set(file, URL.createObjectURL(file))
+  }
+  return filePreviews.get(file)
+}
+function isImage(file) {
+  return file.type && file.type.startsWith('image/')
+}
+
+const previewModalFile = ref(null)
+function previewFile(file) {
+  previewModalFile.value = file
+}
+
 function formatSize(bytes) {
   if (bytes < 1024) return bytes + 'B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB'

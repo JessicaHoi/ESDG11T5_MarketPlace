@@ -316,7 +316,7 @@ onMounted(async () => {
     if (agreement) agreedPrice.value = agreement.offerAmount
 
     // Also restore from localStorage in case it was set manually
-    const savedDeal = getDeal(convKey)
+    const savedDeal = getDeal(order.value ? order.value.listing_id : convKey)
     if (savedDeal && !agreedPrice.value) agreedPrice.value = savedDeal.price
 
   } catch (err) {
@@ -421,7 +421,8 @@ function confirmDeal(amount) {
   agreedPriceInput.value = ''
 
   // Save to localStorage so buyer page picks it up automatically
-  saveDeal(convKey, price)
+  const dealKey = order.value ? order.value.listing_id : convKey
+  saveDeal(dealKey, price)
 
   // Also post a regular text message so it appears in both chats
   const content = `✅ Deal confirmed at ${price}. Proceed to payment.`

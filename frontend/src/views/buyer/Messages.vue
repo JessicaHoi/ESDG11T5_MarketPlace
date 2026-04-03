@@ -125,12 +125,9 @@
           </div>
 
           <!-- Input bar -->
-          <div class="border-t border-ink/10 p-4 bg-paper" v-if="!agreedPrice">
-            <!-- Quick actions -->
+          <div class="border-t border-ink/10 p-4 bg-paper">
+            <!-- Quick messages -->
             <div class="flex gap-2 mb-3 flex-wrap">
-              <button @click="showOfferInput = !showOfferInput" class="text-xs border border-accent text-accent px-3 py-1.5 hover:bg-accent hover:text-white transition-colors font-mono">
-                💰 Make Offer
-              </button>
               <button @click="sendQuickMessage('Is this still available?')" class="text-xs border border-ink/20 text-slate px-3 py-1.5 hover:border-ink/50 transition-colors font-mono">
                 Still available?
               </button>
@@ -140,25 +137,6 @@
               <button @click="sendQuickMessage('What\'s the lowest you can go?')" class="text-xs border border-ink/20 text-slate px-3 py-1.5 hover:border-ink/50 transition-colors font-mono">
                 Best price?
               </button>
-            </div>
-
-            <!-- Offer input -->
-            <div v-if="showOfferInput" class="flex gap-2 mb-3">
-              <div class="flex items-center border border-accent bg-accent/5 flex-1">
-                <span class="px-3 font-mono text-accent font-semibold">$</span>
-                <input
-                  v-model="offerAmount"
-                  type="number"
-                  class="flex-1 bg-transparent py-2 font-mono text-ink outline-none"
-                  :placeholder="listing.listingPrice"
-                  :max="listing.listingPrice"
-                  min="1"
-                />
-              </div>
-              <button @click="sendOffer" class="btn-primary text-xs px-4" :disabled="!offerAmount">
-                Send Offer
-              </button>
-              <button @click="showOfferInput = false" class="btn-secondary text-xs px-3">✕</button>
             </div>
 
             <!-- Message input -->
@@ -251,7 +229,7 @@ import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
 import { fetchListingById, sendMessage as sendMessageToBackend, getMessagesByOrder } from '../../services/api.js'
-import { getDeal } from '../../data/negotiationStore.js'
+import { getDeal, saveDeal } from '../../data/negotiationStore.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -264,10 +242,22 @@ onMounted(async () => {
 
   try {
     const [listingRes, messagesRes] = await Promise.all([
-      fetchListingById(listingID),
+      fetchListingById(listingID).catch(() => null),
       getMessagesByOrder(listingID).catch(() => []),
     ])
     listing.value = listingRes?.data ?? null
+
+    if (!listing.value) {
+      try {
+        const tmpRes = await fetch('/tmp.json')
+        const tmpData = await tmpRes.json()
+        const listings = tmpData.data?.listings || tmpData.listings || []
+        const found = listings.find(l => l.listingID === listingID)
+        if (found) listing.value = found
+      } catch (e) {
+        console.warn('Fallback to tmp.json failed:', e)
+      }
+    }
 
     // Load real messages from backend
     const raw = Array.isArray(messagesRes) ? messagesRes : []
@@ -341,8 +331,6 @@ onUnmounted(() => clearInterval(pollHandle))
 
 const messagesContainer = ref(null)
 const newMessage = ref('')
-const showOfferInput = ref(false)
-const offerAmount = ref('')
 const agreedPrice = ref(null)
 const currentOffer = ref(null)
 
@@ -407,24 +395,10 @@ function sendQuickMessage(text) {
   persistToBackend(text)
 }
 
-function sendOffer() {
-  if (!offerAmount.value || !listing.value) return
-  const amount = parseInt(offerAmount.value)
-  currentOffer.value = amount
-  const content = `Offer: ${amount}`
-  offerAmount.value = ''
-  showOfferInput.value = false
-  addLocalMessage({ id: `local_${Date.now()}`, sender: 'buyer', type: 'offer', offerAmount: amount, text: content, content, time: timestamp() })
-  persistToBackend(content, 'offer', amount)
-}
-
-function triggerCounterOffer() {
-  showOfferInput.value = true
-}
-
 function acceptOffer(amount) {
   agreedPrice.value = amount
   currentOffer.value = amount
+  saveDeal(parseInt(route.params.id), amount)
   const content = `Deal agreed at ${amount}`
   addLocalMessage({ id: `local_${Date.now()}`, sender: 'buyer', type: 'agreement', offerAmount: amount, text: content, content, time: timestamp() })
   persistToBackend(content, 'agreement', amount)

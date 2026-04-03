@@ -132,7 +132,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onActivated } from 'vue'
+import { ref, computed, onMounted, onActivated, onUnmounted } from 'vue'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
 import { getOrders, confirmOrder, fetchListings } from '../../services/api.js'
@@ -179,6 +179,28 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+
+  const doPoll = async () => {
+    const hasActiveOrders = orders.value.some(o => !['COMPLETED', 'REFUNDED'].includes(o.status))
+    if (!hasActiveOrders && orders.value.length > 0) {
+      clearInterval(pollHandle)
+      return
+    }
+    try {
+      const ordersData = await getOrders()
+      const rawOrders = Array.isArray(ordersData) ? ordersData : (ordersData.orders ?? [])
+      rawOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      orders.value = rawOrders
+    } catch (e) { }
+  }
+
+  pollHandle = setInterval(doPoll, 5000)
+})
+
+let pollHandle = null
+
+onUnmounted(() => {
+  if (pollHandle) clearInterval(pollHandle)
 })
 
 // Re-fetch orders when user navigates back to this page

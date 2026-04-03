@@ -26,7 +26,7 @@ class Evidence(db.Model):
     disputeID   = db.Column(db.Integer, nullable=False)
     description = db.Column(db.String(1000), nullable=True)
     uploadedBy  = db.Column(db.Integer, nullable=False)
-    fileURL     = db.Column(db.Text, nullable=True)       # base64 data URL or HTTP URL
+    fileURL     = db.Column(db.Text(length=16777215), nullable=True)       # base64 data URL or HTTP URL
     fileType    = db.Column(db.String(100), nullable=True)
     fileName    = db.Column(db.String(500), nullable=True)
     status      = db.Column(db.String(50), default='PENDING')

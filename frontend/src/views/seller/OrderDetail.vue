@@ -75,7 +75,7 @@
 
               <!-- Message buyer -->
               <button
-                @click="$router.push(`/seller/messages/${order.order_id}`)"
+                @click="$router.push(`/seller/inbox/${order.listing_id}`)"
                 class="btn-primary w-full py-3 text-sm"
               >
                 💬 Message Buyer
@@ -83,12 +83,20 @@
 
               <!-- Mark as shipped / completed — only for RESERVED -->
               <button
-                v-if="order.status === 'RESERVED'"
+                v-if="order.status === 'RESERVED' && !delivered"
                 @click="handleMarkShipped"
                 :disabled="marking"
                 class="btn-secondary w-full py-3 text-sm"
               >
                 {{ marking ? 'Updating...' : 'Mark as Delivered' }}
+              </button>
+
+              <button
+                v-if="order.status === 'DISPUTED'"
+                @click="goToDispute"
+                class="btn-secondary w-full py-3 text-sm mb-2"
+              >
+                Respond to Dispute
               </button>
 
               <div v-if="order.status === 'DISPUTED'" class="bg-red-50 border border-red-200 p-3 text-xs text-red-700 font-mono">
@@ -114,7 +122,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SellerNavbar from '../../components/SellerNavbar.vue'
 import { mockSeller } from '../../data/mockData.js'
-import { getOrdersBySeller, updateOrder, fetchListings } from '../../services/api.js'
+import { getOrdersBySeller, updateOrder, fetchListings, getDisputes } from '../../services/api.js'
 
 const route   = useRoute()
 const router  = useRouter()
@@ -124,6 +132,7 @@ const order       = ref(null)
 const loading     = ref(true)
 const marking     = ref(false)
 const actionError = ref(null)
+const delivered   = ref(false)
 const listingImages = ref({})
 
 const listingImage = computed(() =>
@@ -159,10 +168,26 @@ async function handleMarkShipped() {
     // We update order_details to note delivery, status stays RESERVED until buyer confirms
     const updated = await updateOrder(orderID, { order_details: order.value.order_details + ' [Delivered]' })
     order.value = updated
+    delivered.value = true
   } catch (err) {
     actionError.value = err.message || 'Failed to update order.'
   } finally {
     marking.value = false
+  }
+}
+
+async function goToDispute() {
+  try {
+    const res = await getDisputes()
+    const disputes = res?.data ?? []
+    const found = disputes.find(d => d.orderID === order.value.order_id)
+    if (found) {
+      router.push(`/seller/disputes/${found.disputeID}`)
+    } else {
+      actionError.value = "Dispute not found."
+    }
+  } catch (e) {
+    actionError.value = "Error fetching dispute."
   }
 }
 

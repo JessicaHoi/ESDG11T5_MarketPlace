@@ -85,7 +85,7 @@
             </div>
 
             <!-- Conversation thread -->
-            <div class="bg-cream border border-ink/10 p-5">
+            <div v-if="dispute.sellerResponse" class="bg-cream border border-ink/10 p-5">
               <p class="section-label text-muted mb-4">Dispute Conversation</p>
               <div class="max-h-64 overflow-y-auto space-y-3 mb-4" ref="threadContainer">
                 <div v-if="threadMessages.length === 0" class="text-center text-muted font-mono text-sm py-4">No messages yet.</div>
@@ -115,6 +115,17 @@
               </div>
               <div v-else>
                 <textarea v-model="responseText" class="input-field resize-none" rows="4" placeholder="Explain your side of the story..."></textarea>
+                <p class="section-label mt-4 mb-2 text-muted">Upload Evidence (Optional)</p>
+                <input type="file" ref="fileInput" multiple accept="image/*,video/*,.pdf" @change="handleFileSelect" class="mb-3 text-sm font-mono text-muted file:mr-4 file:py-2 file:px-4 file:border-0 file:text-sm file:font-semibold file:bg-sage/10 file:text-sage hover:file:bg-sage/20"/>
+                <<div v-if="evidenceStore.length > 0" class="mb-3 space-y-2">
+                  <div v-for="(file, i) in evidenceStore" :key="i" class="flex items-center gap-3 bg-ink/5 px-3 py-2">
+                    <img v-if="isImageFile(file)" :src="getPreviewURL(file)" class="w-10 h-10 object-cover border border-ink/10 flex-shrink-0" />
+                    <span v-else class="text-xl flex-shrink-0">{{ fileIcon(file.name) }}</span>
+                    <span class="truncate text-xs font-mono text-slate flex-1">{{ file.name }}</span>
+                    <button type="button" @click="previewStoreFile(file)" class="text-xs text-accent hover:underline font-mono flex-shrink-0">Preview</button>
+                    <button type="button" @click="evidenceStore.splice(i, 1)" class="text-red-500 hover:text-red-700 text-xs flex-shrink-0">✕</button>
+                  </div>
+                </div>
                 <button @click="submitResponse" class="btn-primary mt-3" :disabled="!responseText.trim() || submittingResponse">
                   {{ submittingResponse ? 'Submitting...' : 'Submit Response' }}
                 </button>
@@ -174,6 +185,18 @@
       <p class="text-white font-mono text-sm mt-4 text-center">{{ currentLightboxFile?.fileName }} · {{ lightboxIndex + 1 }}/{{ evidenceFiles.length }}</p>
     </div>
   </div>
+
+  <div v-if="previewModal" class="fixed inset-0 bg-ink/90 flex items-center justify-center z-50 p-6" @click.self="previewModal = null">
+    <button @click="previewModal = null" class="absolute top-6 right-6 text-white text-2xl hover:text-accent">✕</button>
+    <div class="max-w-3xl max-h-[80vh] flex flex-col items-center">
+      <img v-if="previewModal.isImage" :src="previewModal.url" class="max-w-full max-h-[70vh] object-contain" />
+      <div v-else class="bg-paper p-12 text-center">
+        <p class="text-5xl mb-4">{{ fileIcon(previewModal.name) }}</p>
+        <p class="font-display font-semibold">{{ previewModal.name }}</p>
+      </div>
+      <p class="text-white font-mono text-sm mt-4">{{ previewModal.name }}</p>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -183,7 +206,7 @@ import SellerNavbar from '../../components/SellerNavbar.vue'
 import { mockSeller } from '../../data/mockData.js'
 import {
   getDispute, getEvidenceByDispute, getMessagesByOrder, sendMessage,
-  submitSellerResponse, sellerAgreeDispute,
+  submitSellerResponse, sellerAgreeDispute, uploadEvidence
 } from '../../services/api.js'
 
 const route = useRoute()
@@ -253,12 +276,65 @@ function startTimer() {
   update(); timerHandle = setInterval(update, 1000)
 }
 
+const evidenceStore = ref([])
+const previewModal = ref(null)
+const filePreviews = new Map()
+
+function handleFileSelect(e) {
+  evidenceStore.value.push(...Array.from(e.target.files).slice(0, 5 - evidenceStore.value.length))
+}
+
+function isImageFile(file) {
+  return file.type && file.type.startsWith('image/')
+}
+
+function getPreviewURL(file) {
+  if (!filePreviews.has(file)) {
+    filePreviews.set(file, URL.createObjectURL(file))
+  }
+  return filePreviews.get(file)
+}
+
+function previewStoreFile(file) {
+  previewModal.value = {
+    url:     getPreviewURL(file),
+    name:    file.name,
+    isImage: isImageFile(file),
+  }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
 async function submitResponse() {
   if (!responseText.value.trim()) return
   submittingResponse.value = true
   try {
     const res = await submitSellerResponse(disputeID, responseText.value)
     dispute.value = res?.data ?? { ...dispute.value, sellerResponse: responseText.value, disputeStatus: 'RESPONSE' }
+
+    // Upload files if any
+    for (const file of evidenceStore.value) {
+      const base64 = await fileToBase64(file)
+      await uploadEvidence({
+        disputeID: disputeID,
+        uploadedBy: mockSeller.id,
+        fileURL: base64,
+        fileType: file.type,
+        fileName: file.name
+      }).catch(console.warn)
+    }
+
+    // Refresh evidence
+    const eRes = await getEvidenceByDispute(disputeID).catch(() => ({ data: [] }))
+    evidenceFiles.value = eRes?.data ?? []
+
     // Also send as a thread message
     await sendMessage({ orderID: -disputeID, senderID: mockSeller.id, receiverID: dispute.value.buyerID, content: responseText.value, messageType: 'text' }).catch(() => {})
     await loadThread()

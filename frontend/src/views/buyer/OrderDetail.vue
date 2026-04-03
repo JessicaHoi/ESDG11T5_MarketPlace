@@ -41,6 +41,9 @@
                   <span class="status-badge font-mono text-xs" :class="paymentBadgeClass(order.status)">
                     {{ order.status }}
                   </span>
+                  <span v-if="order.status === 'DISPUTED' && disputeStatus" class="status-badge font-mono text-xs bg-red-100 text-red-700">
+                    {{ disputeStatus }}
+                  </span>
                 </div>
                 <h1 class="font-display font-extrabold text-xl leading-tight mb-1">
                   {{ order.order_details || `Listing #${order.listing_id}` }}
@@ -85,6 +88,14 @@
             <div class="bg-white border border-ink/10 p-6 sticky top-24 space-y-4">
               <p class="section-label mb-2">Actions</p>
 
+              <!-- Message Seller -->
+              <button
+                @click="$router.push(`/messages/${order.listing_id}`)"
+                class="btn-primary w-full py-3 text-sm mb-2"
+              >
+                💬 Message Seller
+              </button>
+
               <!-- RESERVED: Cancel Order -->
               <template v-if="order.status === 'RESERVED'">
                 <div class="bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700 font-mono leading-relaxed mb-2">
@@ -123,6 +134,13 @@
                 >
                   {{ statusNote(order.status) }}
                 </div>
+                <button
+                  v-if="order.status === 'DISPUTED'"
+                  @click="goToDispute"
+                  class="btn-secondary w-full py-3 text-sm mb-2"
+                >
+                  View Dispute
+                </button>
                 <button
                   @click="$router.push(`/listings/${order.listing_id}`)"
                   class="btn-primary w-full py-3 text-sm"
@@ -164,11 +182,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
-import { getOrders, confirmOrder, updateOrder, fetchListings } from '../../services/api.js'
+import { getOrders, confirmOrder, updateOrder, fetchListings, getDisputes, getDisputesByOrder } from '../../services/api.js'
 
 const route  = useRoute()
 const router = useRouter()
@@ -181,6 +199,8 @@ const confirming   = ref(false)
 const cancelling   = ref(false)
 const actionError  = ref(null)
 const showCancelConfirm = ref(false)
+const disputeStatus = ref(null)
+let pollHandle = null
 
 const listingImage = computed(() => {
   if (!order.value) return null
@@ -197,6 +217,13 @@ onMounted(async () => {
     const found = all.find(o => o.order_id === orderID)
     if (found) {
       order.value = found
+      if (found.status === 'DISPUTED') {
+        getDisputesByOrder(orderID).then(res => {
+          const disputes = res?.data?.disputes ?? res?.data ?? []
+          const foundDispute = disputes.find(d => d.orderID === orderID)
+          if (foundDispute) disputeStatus.value = foundDispute.disputeStatus
+        }).catch(() => {})
+      }
     }
     // Build image lookup
     const listings = listingsData?.data?.listings ?? listingsData?.listings ?? []
@@ -210,7 +237,51 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+
+  // Poll for status updates
+  pollHandle = setInterval(async () => {
+    if (order.value && ['COMPLETED', 'REFUNDED'].includes(order.value.status)) {
+      clearInterval(pollHandle)
+      return
+    }
+    try {
+      const ordersData = await getOrders()
+      const all = Array.isArray(ordersData) ? ordersData : (ordersData.orders ?? [])
+      const found = all.find(o => o.order_id === orderID)
+      if (found && found.status !== order.value?.status) {
+        order.value = found
+      }
+      if (order.value?.status === 'DISPUTED') {
+        getDisputesByOrder(orderID).then(res => {
+          const disputes = res?.data?.disputes ?? res?.data ?? []
+          const foundDispute = disputes.find(d => d.orderID === orderID)
+          if (foundDispute) disputeStatus.value = foundDispute.disputeStatus
+        }).catch(() => {})
+      }
+    } catch (e) {
+      // silently ignore polling errors
+    }
+  }, 5000)
 })
+
+onUnmounted(() => {
+  if (pollHandle) clearInterval(pollHandle)
+})
+
+async function goToDispute() {
+  try {
+    const res = await getDisputes()
+    const disputes = res?.data?.disputes ?? res?.data ?? []
+    const found = disputes.find(d => d.orderID === order.value.order_id)
+    if (found) {
+      router.push(`/disputes/${found.disputeID}`)
+    } else {
+      actionError.value = "Dispute not found."
+    }
+  } catch (e) {
+    actionError.value = "Error fetching dispute."
+  }
+}
 
 async function handleConfirmReceipt() {
   confirming.value = true
