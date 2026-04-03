@@ -9,7 +9,7 @@ app = Flask(__name__)
 CORS(app)
 
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-    "DATABASE_URL", "mysql+mysqlconnector://root@localhost:3306/payment_db"
+    "DATABASE_URL", "mysql+mysqlconnector://root@localhost:3308/payment_db"
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 

@@ -44,6 +44,24 @@ export function updateDisputeStatus(id, status, mockDisputes = []) {
 }
 
 /**
+ * Update the seller's response text on a dispute.
+ * If the dispute isn't in localStorage yet (it's a mock), copy it in first.
+ */
+export function updateSellerResponse(id, responseText, mockDisputes = []) {
+  const existing = loadLocalDisputes()
+  const idx = existing.findIndex(d => d.id === id)
+  if (idx !== -1) {
+    existing[idx] = { ...existing[idx], sellerResponse: responseText }
+  } else {
+    const seed = mockDisputes.find(d => d.id === id)
+    if (seed) {
+      existing.unshift({ ...seed, sellerResponse: responseText })
+    }
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(existing))
+}
+
+/**
  * Merge mockDisputes with localStorage disputes.
  * localStorage disputes take priority (they are newer / user-raised).
  */

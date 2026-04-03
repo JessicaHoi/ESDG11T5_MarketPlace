@@ -11,7 +11,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = (
     f"mysql+mysqlconnector://{os.environ.get('DB_USER','root')}:"
     f"{os.environ.get('DB_PASSWORD','root')}@"
     f"{os.environ.get('DB_HOST','evidence-db')}:"
-    f"{os.environ.get('DB_PORT','3306')}/"
+    f"{os.environ.get('DB_PORT','3308')}/"
     f"{os.environ.get('DB_NAME','evidence')}"
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False

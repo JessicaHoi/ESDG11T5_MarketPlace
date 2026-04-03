@@ -62,9 +62,19 @@
 
             <!-- Price -->
             <div class="flex items-baseline gap-3 mb-6">
-              <span class="font-display font-extrabold text-4xl text-accent">
+              <span v-if="negotiatedPrice" class="font-display font-extrabold text-4xl text-accent">
+                ${{ parseFloat(negotiatedPrice).toFixed(2) }}
+              </span>
+              <span
+                class="font-display font-extrabold text-4xl"
+                :class="negotiatedPrice ? 'line-through text-ink/30 text-2xl' : 'text-accent'"
+              >
                 ${{ parseFloat(listing.listingPrice).toFixed(2) }}
               </span>
+            </div>
+            <div v-if="negotiatedPrice" class="bg-sage/10 border border-sage/20 px-3 py-2 mb-6 flex items-center gap-2">
+              <span class="text-sage text-sm">🤝</span>
+              <p class="text-xs text-sage font-mono">Negotiated price agreed — this is the amount you'll pay at checkout</p>
             </div>
 
             <!-- Stock -->
@@ -153,6 +163,7 @@ import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
 import { fetchListingById, getOrders } from '../../services/api.js'
+import { getDeal } from '../../data/negotiationStore.js'
 
 const route  = useRoute()
 const router = useRouter()
@@ -161,6 +172,7 @@ const listing  = ref(null)
 const loading  = ref(true)
 const apiError = ref(null)
 const orders   = ref([])
+const negotiatedPrice = ref(null)
 
 // Find an order matching this listing for the current user
 const matchingOrder = computed(() => {
@@ -193,6 +205,11 @@ onMounted(async () => {
     const data = listingRes?.data ?? null
     if (data && data.listingName) {
       listing.value = data
+      // Check negotiation store for a previously agreed price
+      const deal = getDeal(data.listingID)
+      if (deal && deal.price && deal.price !== data.listingPrice) {
+        negotiatedPrice.value = deal.price
+      }
     } else {
       apiError.value = 'Listing not found.'
     }
@@ -209,7 +226,11 @@ function negotiate() {
 }
 
 function buyNow() {
-  router.push(`/purchase/${listing.value.listingID}`)
+  const query = {}
+  if (negotiatedPrice.value) {
+    query.price = negotiatedPrice.value
+  }
+  router.push({ path: `/purchase/${listing.value.listingID}`, query })
 }
 
 function onImageError(e) {
