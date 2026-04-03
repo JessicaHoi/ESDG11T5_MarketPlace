@@ -16,7 +16,7 @@
           <h1 class="font-display font-extrabold text-3xl">What went wrong?</h1>
           <p class="text-slate text-sm mt-2 leading-relaxed">
             Filing a dispute will freeze the escrow funds. The seller will have
-            <strong class="font-display">48 hours</strong> to respond before an automatic refund is issued.
+            <strong class="font-display">24 hours</strong> to respond before an automatic refund is issued.
           </p>
         </div>
 
@@ -67,11 +67,11 @@
             </div>
 
             <div class="bg-white border border-ink/10 p-6">
-              <p class="section-label mb-1">Upload Evidence</p>
-              <p class="text-xs text-muted font-mono mb-4">Photos, videos, screenshots (max 5 files)</p>
+              <p class="section-label mb-1">Upload Evidence <span class="text-red-500">*</span></p>
+              <p class="text-xs text-muted font-mono mb-4">Photos, videos, screenshots (max 5 files, required)</p>
               <div
                 class="border-2 border-dashed border-ink/20 p-8 text-center cursor-pointer hover:border-accent/40 transition-colors"
-                :class="{ 'border-accent bg-accent/5': isDragging }"
+                :class="{ 'border-accent bg-accent/5': isDragging, 'border-red-400 bg-red-50': submitAttempted && form.files.length === 0 }"
                 @dragover.prevent="isDragging = true" @dragleave="isDragging = false"
                 @drop.prevent="handleDrop" @click="$refs.fileInput.click()"
               >
@@ -80,6 +80,9 @@
                 <p class="text-xs text-muted font-mono">JPG, PNG, MP4, PDF supported</p>
                 <input ref="fileInput" type="file" class="hidden" multiple accept="image/*,video/*,.pdf" @change="handleFileSelect" />
               </div>
+              <p v-if="submitAttempted && form.files.length === 0" class="text-red-500 text-xs font-mono mt-2">
+                ⚠ Evidence is mandatory. Please upload at least one file.
+              </p>
               <div v-if="form.files.length > 0" class="mt-4 space-y-2">
                 <div v-for="(file, i) in form.files" :key="i" class="flex items-center justify-between bg-cream px-4 py-2">
                   <div class="flex items-center gap-2">
@@ -97,9 +100,9 @@
             <div class="border border-amber-200 bg-amber-50 p-4 flex gap-3">
               <span class="text-amber-500 text-lg flex-shrink-0">⏱</span>
               <div>
-                <p class="font-display font-semibold text-sm text-amber-800 mb-1">48-Hour Seller Response Window</p>
+                <p class="font-display font-semibold text-sm text-amber-800 mb-1">24-Hour Seller Response Window</p>
                 <p class="text-xs text-amber-700 leading-relaxed">
-                  Once submitted, the seller will be notified and has 48 hours to respond.
+                  Once submitted, the seller will be notified and has 24 hours to respond.
                   If no response is received by <strong>{{ deadline }}</strong>, you will be automatically refunded.
                 </p>
               </div>
@@ -110,7 +113,7 @@
               <button
                 type="submit"
                 class="flex-1 bg-red-600 text-white font-display font-semibold px-6 py-3 hover:bg-red-700 transition-colors text-sm tracking-wide uppercase"
-                :disabled="!form.reason || !form.description || submitting"
+                :disabled="!canSubmit || submitting"
               >{{ submitting ? 'Submitting...' : 'Submit Dispute' }}</button>
             </div>
           </form>
@@ -126,7 +129,7 @@
       <div class="w-16 h-16 bg-red-100 flex items-center justify-center mx-auto mb-4 text-3xl">⚠</div>
       <h2 class="font-display font-extrabold text-2xl mb-2">Dispute Filed</h2>
       <p class="text-slate text-sm mb-6 leading-relaxed">
-        Your dispute has been submitted. The escrow funds are now frozen. The seller has 48 hours to respond.
+        Your dispute has been submitted. The escrow funds are now frozen. The seller has 24 hours to respond.
       </p>
       <div class="bg-cream p-3 mb-6 text-left space-y-2">
         <div class="flex justify-between text-xs font-mono">
@@ -153,7 +156,6 @@ import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
 import { getOrder, raiseDispute, getAllPayments } from '../../services/api.js'
-import { saveDispute } from '../../data/disputeStore.js'
 
 const route  = useRoute()
 const router = useRouter()
@@ -178,6 +180,7 @@ const submitting    = ref(false)
 const success       = ref(false)
 const apiError      = ref(null)
 const disputeResult = ref(null)
+const submitAttempted = ref(false)
 
 const reasons = [
   { value: 'not_as_described', label: 'Item Not as Described',  desc: 'Item condition or details differ significantly from listing' },
@@ -187,10 +190,12 @@ const reasons = [
   { value: 'other',            label: 'Other Issue',             desc: 'Another problem not listed above' },
 ]
 
+const canSubmit = computed(() => form.value.reason && form.value.description && form.value.files.length > 0)
+
 const deadline = computed(() => {
   const d = new Date()
-  d.setDate(d.getDate() + 2)
-  return d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })
+  d.setHours(d.getHours() + 24)
+  return d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 })
 
 function handleDrop(e) {
@@ -213,8 +218,21 @@ function formatSize(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + 'MB'
 }
 
+/** Convert a File to base64 data URL */
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
 async function submitDispute() {
   if (!order.value) return
+  submitAttempted.value = true
+  if (!canSubmit.value) return
+
   apiError.value = null
   submitting.value = true
 
@@ -223,7 +241,6 @@ async function submitDispute() {
     try {
       const paymentsData = await getAllPayments()
       const payments = paymentsData?.data ?? []
-      // Find the most recent HELD payment for this order (highest paymentID)
       const heldPayments = payments.filter(
         p => p.orderID === order.value.order_id && p.holdStatus === 'HELD'
       )
@@ -235,9 +252,16 @@ async function submitDispute() {
       console.warn('Could not fetch paymentID, using 0:', e)
     }
 
-    const firstFile = form.value.files[0]
-    const fileURL   = firstFile ? URL.createObjectURL(firstFile) : 'https://placeholder.tradenest.sg/evidence.jpg'
-    const fileType  = firstFile ? firstFile.type : 'image/jpeg'
+    // Convert all files to base64 data URLs
+    const filesPayload = []
+    for (const file of form.value.files) {
+      const base64 = await fileToBase64(file)
+      filesPayload.push({
+        fileURL:  base64,
+        fileType: file.type,
+        fileName: file.name,
+      })
+    }
 
     const result = await raiseDispute({
       orderID:       order.value.order_id,
@@ -245,33 +269,17 @@ async function submitDispute() {
       sellerID:      order.value.seller_id,
       disputeReason: form.value.reason,
       paymentID,
-      fileURL,
-      fileType,
+      fileURL:       filesPayload[0]?.fileURL || '',
+      fileType:      filesPayload[0]?.fileType || '',
+      fileName:      filesPayload[0]?.fileName || '',
       description:   form.value.description,
+      amount:        order.value.agreed_price,
+      listingTitle:  order.value.order_details || `Listing #${order.value.listing_id}`,
+      files:         filesPayload,
     })
 
     const data = result?.data ?? result
     disputeResult.value = data
-
-    // Save to shared store so admin pages see it immediately
-    const deadline = new Date()
-    deadline.setDate(deadline.getDate() + 2)
-    saveDispute({
-      id:             `DIS-${data.disputeID}`,
-      orderID:        `ORD-${order.value.order_id}`,
-      buyerName:      mockUser.name,
-      sellerName:     `Seller #${order.value.seller_id}`,
-      listing:        order.value.order_details || `Listing #${order.value.listing_id}`,
-      amount:         order.value.agreed_price,
-      reason:         form.value.reason,
-      description:    form.value.description,
-      status:         'PENDING',
-      evidence:       form.value.files.map(f => f.name),
-      raisedAt:       new Date().toISOString().slice(0, 10),
-      deadline:       deadline.toISOString().slice(0, 10),
-      sellerResponse: null,
-    })
-
     success.value = true
   } catch (err) {
     apiError.value = err.message || 'Failed to submit dispute. Please try again.'

@@ -136,26 +136,26 @@
             <div class="space-y-3">
               <div
                 v-for="dispute in recentDisputes"
-                :key="dispute.id"
+                :key="dispute.disputeID"
                 class="bg-white border border-ink/10 p-4 hover:border-ink/30 transition-colors cursor-pointer group"
-                @click="$router.push(`/seller/disputes/${dispute.id}`)"
+                @click="$router.push(`/seller/disputes/${dispute.disputeID}`)"
               >
                 <div class="flex items-center justify-between gap-3">
                   <div class="min-w-0">
                     <div class="flex items-center gap-2 mb-0.5">
-                      <span class="font-mono text-xs text-muted">{{ dispute.id }}</span>
+                      <span class="font-mono text-xs text-muted">DIS-{{ dispute.disputeID }}</span>
                       <span
                         class="inline-flex items-center px-2 py-0.5 text-xs font-mono font-medium uppercase tracking-wider"
-                        :class="disputeBadgeClass(dispute.status)"
-                      >{{ dispute.status }}</span>
+                        :class="disputeBadgeClass(dispute.disputeStatus)"
+                      >{{ dispute.disputeStatus }}</span>
                     </div>
                     <p class="font-display font-semibold text-sm group-hover:text-accent transition-colors truncate">
-                      {{ dispute.listing }}
+                      {{ dispute.listingTitle || 'Dispute' }}
                     </p>
-                    <p class="text-xs text-muted font-mono mt-0.5">{{ dispute.buyerName }} · {{ dispute.raisedAt }}</p>
+                    <p class="text-xs text-muted font-mono mt-0.5">Buyer #{{ dispute.buyerID }} · {{ formatDate(dispute.createdAt) }}</p>
                   </div>
                   <div class="text-right flex-shrink-0">
-                    <p class="font-display font-bold text-accent">${{ dispute.amount }}</p>
+                    <p class="font-display font-bold text-accent">${{ dispute.amount || 0 }}</p>
                     <p class="text-xs font-mono mt-0.5" :class="dispute.sellerResponse ? 'text-sage' : 'text-amber-400'">
                       {{ dispute.sellerResponse ? 'Responded' : 'Needs response' }}
                     </p>
@@ -179,9 +179,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import SellerNavbar from '../../components/SellerNavbar.vue'
-import { mockSeller, mockDisputes } from '../../data/mockData.js'
-import { getOrdersBySeller } from '../../services/api.js'
-import { getMergedDisputes } from '../../data/disputeStore.js'
+import { mockSeller } from '../../data/mockData.js'
+import { getOrdersBySeller, getDisputesBySeller, fetchListings } from '../../services/api.js'
 
 const outsystemsListingUrl = 'https://personal-8vnud50n.outsystemscloud.com/Listing/rest/Listing/listing/'
 
@@ -196,33 +195,28 @@ const disputedCount  = computed(() => orders.value.filter(o => o.status === 'DIS
 const revenue        = computed(() => orders.value.filter(o => o.status === 'COMPLETED').reduce((sum, o) => sum + (o.agreed_price || 0), 0))
 const recentOrders   = computed(() => orders.value.slice(0, 5))
 const recentDisputes = computed(() => sellerDisputes.value.slice(0, 3))
-const pendingDisputeCount = computed(() => sellerDisputes.value.filter(d => d.status === 'PENDING').length)
+const pendingDisputeCount = computed(() => sellerDisputes.value.filter(d => d.disputeStatus === 'OPEN' || d.disputeStatus === 'RESPONSE').length)
 
 onMounted(async () => {
   try {
-    const [ordersData, listingsData] = await Promise.all([
+    const [ordersData, listingsData, disputesData] = await Promise.all([
       getOrdersBySeller(mockSeller.id),
-      fetch('/tmp.json').then(r => r.json()).catch(() => null),
+      fetchListings().catch(() => null),
+      getDisputesBySeller(mockSeller.id).catch(() => ({ data: { disputes: [] } })),
     ])
     orders.value = Array.isArray(ordersData) ? ordersData : (ordersData.orders ?? [])
-    const listings = listingsData?.data?.listings ?? []
+    const listings = listingsData?.data?.listings ?? listingsData?.listings ?? []
     listings.forEach(l => {
       if (l.listingImgUrl && l.listingImgUrl.length > 5) {
         listingImages.value[l.listingID] = l.listingImgUrl
       }
     })
+    sellerDisputes.value = disputesData?.data?.disputes ?? []
   } catch (err) {
-    console.error('Failed to load seller orders:', err)
+    console.error('Failed to load seller dashboard:', err)
   } finally {
     loading.value = false
   }
-
-  // Load disputes for this seller
-  const allDisputes = getMergedDisputes(mockDisputes)
-  sellerDisputes.value = allDisputes.filter(d =>
-    d.sellerName === mockSeller.name ||
-    d.sellerName === `Seller #${mockSeller.id}`
-  )
 })
 
 function badgeClass(status) {
@@ -236,9 +230,9 @@ function badgeClass(status) {
 
 function disputeBadgeClass(status) {
   return {
-    PENDING:  'bg-amber-100 text-amber-700',
-    APPROVED: 'bg-sage/20 text-sage',
-    REJECTED: 'bg-red-100 text-red-600',
+    OPEN: 'bg-amber-100 text-amber-700', RESPONSE: 'bg-blue-100 text-blue-700',
+    AWAITING_DECISION: 'bg-purple-100 text-purple-700',
+    APPROVED: 'bg-sage/20 text-sage', REJECTED: 'bg-red-100 text-red-600',
   }[status] || 'bg-ink/10 text-slate'
 }
 

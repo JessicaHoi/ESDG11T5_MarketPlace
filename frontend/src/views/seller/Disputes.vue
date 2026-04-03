@@ -1,9 +1,8 @@
 <template>
-  <div class="min-h-screen bg-paper text-ink">
+  <div class="min-h-screen bg-paper">
     <SellerNavbar :seller="mockSeller" />
 
     <div class="pt-16">
-      <!-- Header -->
       <div class="bg-ink text-paper py-10 px-6">
         <div class="max-w-5xl mx-auto">
           <div class="flex gap-6 mb-6">
@@ -17,80 +16,55 @@
       </div>
 
       <div class="max-w-5xl mx-auto px-6 py-8">
-        <!-- Filter tabs -->
-        <div class="flex gap-1 mb-6 border-b border-ink/10">
-          <button
-            v-for="tab in tabs"
-            :key="tab.value"
-            @click="activeTab = tab.value"
-            class="section-label px-4 py-3 border-b-2 transition-colors -mb-px"
-            :class="activeTab === tab.value
-              ? 'border-accent text-accent'
-              : 'border-transparent text-muted hover:text-ink'"
-          >
-            {{ tab.label }}
-            <span class="ml-1.5 font-mono text-xs">{{ tabCount(tab.value) }}</span>
-          </button>
-        </div>
+        <div v-if="loading" class="text-center py-20 text-muted font-mono text-sm">Loading disputes...</div>
 
-        <!-- Search -->
-        <div class="mb-6">
-          <input
-            v-model="search"
-            type="text"
-            class="input-field max-w-xs"
-            placeholder="Search dispute ID, buyer, listing..."
-          />
-        </div>
+        <template v-else>
+          <div class="flex gap-1 mb-6 border-b border-ink/10">
+            <button v-for="tab in tabs" :key="tab.value" @click="activeTab = tab.value"
+              class="section-label px-4 py-3 border-b-2 transition-colors -mb-px"
+              :class="activeTab === tab.value ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-ink'">
+              {{ tab.label }} <span class="ml-1.5 font-mono text-xs">{{ tabCount(tab.value) }}</span>
+            </button>
+          </div>
 
-        <!-- Disputes list -->
-        <div class="space-y-3">
-          <div
-            v-for="dispute in filteredDisputes"
-            :key="dispute.id"
-            class="bg-white border border-ink/10 hover:border-accent/40 transition-all cursor-pointer group"
-            @click="$router.push(`/seller/disputes/${dispute.id}`)"
-          >
-            <div class="p-5 flex items-center gap-4">
-              <!-- Status indicator -->
-              <div class="w-1.5 self-stretch flex-shrink-0 rounded-full" :class="statusBar(dispute.status)"></div>
+          <div class="mb-6">
+            <input v-model="search" type="text" class="input-field max-w-xs" placeholder="Search dispute ID, buyer, listing..." />
+          </div>
 
-              <!-- Main info -->
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-3 mb-2 flex-wrap">
-                  <span class="font-mono font-medium text-sm text-ink">{{ dispute.id }}</span>
-                  <StatusBadge :status="dispute.status" />
-                  <span class="font-mono text-xs text-muted">{{ dispute.orderID }}</span>
+          <div class="space-y-3">
+            <div v-for="d in filteredDisputes" :key="d.disputeID"
+              class="bg-white border border-ink/10 hover:border-accent/40 transition-all cursor-pointer group"
+              @click="$router.push(`/seller/disputes/${d.disputeID}`)">
+              <div class="p-5 flex items-center gap-4">
+                <div class="w-1.5 self-stretch flex-shrink-0 rounded-full" :class="statusBar(d.disputeStatus)"></div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-3 mb-2 flex-wrap">
+                    <span class="font-mono font-medium text-sm text-ink">DIS-{{ d.disputeID }}</span>
+                    <span class="inline-flex items-center px-2 py-0.5 text-xs font-mono font-medium uppercase tracking-wider" :class="statusBadge(d.disputeStatus)">{{ d.disputeStatus }}</span>
+                    <span class="font-mono text-xs text-muted">ORD-{{ d.orderID }}</span>
+                  </div>
+                  <p class="font-display font-semibold text-base text-ink leading-tight mb-1 group-hover:text-accent transition-colors">
+                    {{ d.listingTitle || 'Dispute' }}
+                  </p>
+                  <div class="flex items-center gap-4 flex-wrap">
+                    <span class="text-xs text-slate font-mono">Buyer #{{ d.buyerID }}</span>
+                    <span class="text-xs text-muted font-mono">{{ formatDate(d.createdAt) }}</span>
+                  </div>
                 </div>
-                <p class="font-display font-semibold text-base text-ink leading-tight mb-1 group-hover:text-accent transition-colors">
-                  {{ dispute.listing }}
-                </p>
-                <div class="flex items-center gap-4 flex-wrap">
-                  <span class="text-xs text-slate font-mono">Buyer: {{ dispute.buyerName }}</span>
-                  <span class="text-xs text-muted font-mono">{{ dispute.raisedAt }}</span>
+                <div class="text-right flex-shrink-0">
+                  <p class="font-display font-bold text-lg text-accent">${{ d.amount || 0 }}</p>
+                  <p class="text-xs text-muted font-mono mt-1">{{ (d.disputeReason || '').replace(/_/g, ' ') }}</p>
+                  <p v-if="!d.sellerResponse" class="text-xs text-amber-500 font-mono mt-1">Needs response</p>
                 </div>
+                <span class="text-muted group-hover:text-accent transition-colors ml-2">→</span>
               </div>
+            </div>
 
-              <!-- Right side -->
-              <div class="text-right flex-shrink-0">
-                <p class="font-display font-bold text-lg text-accent">${{ dispute.amount }}</p>
-                <p class="text-xs text-muted font-mono mt-1">{{ dispute.reason.replace(/_/g, ' ') }}</p>
-                <div class="flex items-center gap-1 justify-end mt-2">
-                  <span class="text-xs text-muted font-mono">{{ dispute.evidence.length }} files</span>
-                  <span class="text-muted">·</span>
-                  <span class="text-xs text-muted font-mono">Deadline: {{ dispute.deadline }}</span>
-                </div>
-              </div>
-
-              <span class="text-muted group-hover:text-accent transition-colors ml-2">→</span>
+            <div v-if="filteredDisputes.length === 0" class="text-center py-16">
+              <p class="font-display font-semibold text-2xl text-ink/30">No disputes found</p>
             </div>
           </div>
-
-          <div v-if="filteredDisputes.length === 0" class="text-center py-16">
-            <p class="font-display font-semibold text-2xl text-ink/30">No disputes found</p>
-            <p class="text-sm text-muted font-mono mt-2">Disputes related to your orders will appear here</p>
-          </div>
-        </div>
+        </template>
       </div>
     </div>
   </div>
@@ -99,75 +73,52 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import SellerNavbar from '../../components/SellerNavbar.vue'
-import { mockDisputes, mockSeller } from '../../data/mockData.js'
-import { getMergedDisputes } from '../../data/disputeStore.js'
+import { mockSeller } from '../../data/mockData.js'
+import { getDisputesBySeller } from '../../services/api.js'
 
 const disputes = ref([])
-
-onMounted(() => {
-  const all = getMergedDisputes(mockDisputes)
-  // Filter to disputes relevant to this seller
-  disputes.value = all.filter(d =>
-    d.sellerName === mockSeller.name ||
-    d.sellerName === `Seller #${mockSeller.id}`
-  )
-})
-
+const loading = ref(true)
 const activeTab = ref('all')
 const search = ref('')
 
+onMounted(async () => {
+  try {
+    const res = await getDisputesBySeller(mockSeller.id)
+    disputes.value = res?.data?.disputes ?? []
+  } catch (err) {
+    console.error('Failed to load disputes:', err)
+  } finally {
+    loading.value = false
+  }
+})
+
 const tabs = [
-  { label: 'All', value: 'all' },
-  { label: 'Pending', value: 'PENDING' },
-  { label: 'Approved', value: 'APPROVED' },
-  { label: 'Rejected', value: 'REJECTED' },
+  { label: 'All', value: 'all' }, { label: 'Open', value: 'OPEN' },
+  { label: 'Response', value: 'RESPONSE' }, { label: 'Awaiting', value: 'AWAITING_DECISION' },
+  { label: 'Approved', value: 'APPROVED' }, { label: 'Rejected', value: 'REJECTED' },
 ]
 
 const stats = computed(() => [
   { label: 'Total', value: disputes.value.length, color: 'text-paper' },
-  { label: 'Pending', value: disputes.value.filter(d => d.status === 'PENDING').length, color: 'text-amber-400' },
-  { label: 'Approved', value: disputes.value.filter(d => d.status === 'APPROVED').length, color: 'text-sage' },
-  { label: 'Rejected', value: disputes.value.filter(d => d.status === 'REJECTED').length, color: 'text-red-400' },
+  { label: 'Open', value: disputes.value.filter(d => d.disputeStatus === 'OPEN').length, color: 'text-amber-400' },
+  { label: 'Approved', value: disputes.value.filter(d => d.disputeStatus === 'APPROVED').length, color: 'text-sage' },
+  { label: 'Rejected', value: disputes.value.filter(d => d.disputeStatus === 'REJECTED').length, color: 'text-red-400' },
 ])
 
 const filteredDisputes = computed(() => {
   return disputes.value.filter(d => {
-    const matchTab = activeTab.value === 'all' || d.status === activeTab.value
-    const matchSearch = !search.value ||
-      d.id.toLowerCase().includes(search.value.toLowerCase()) ||
-      d.buyerName.toLowerCase().includes(search.value.toLowerCase()) ||
-      d.listing.toLowerCase().includes(search.value.toLowerCase())
+    const matchTab = activeTab.value === 'all' || d.disputeStatus === activeTab.value
+    const q = search.value.toLowerCase()
+    const matchSearch = !q || String(d.disputeID).includes(q) || (d.listingTitle || '').toLowerCase().includes(q) || String(d.buyerID).includes(q)
     return matchTab && matchSearch
   })
 })
 
 function tabCount(tab) {
   if (tab === 'all') return disputes.value.length
-  return disputes.value.filter(d => d.status === tab).length
+  return disputes.value.filter(d => d.disputeStatus === tab).length
 }
-
-function statusBar(status) {
-  return {
-    PENDING:  'bg-amber-400',
-    APPROVED: 'bg-sage',
-    REJECTED: 'bg-red-500',
-  }[status] || 'bg-ink/20'
-}
-
-const StatusBadge = {
-  props: ['status'],
-  template: `
-    <span class="inline-flex items-center px-2 py-0.5 text-xs font-mono font-medium uppercase tracking-wider" :class="cls">{{ label }}</span>
-  `,
-  computed: {
-    cls() {
-      return {
-        PENDING:  'bg-amber-100 text-amber-700',
-        APPROVED: 'bg-sage/20 text-sage',
-        REJECTED: 'bg-red-100 text-red-600',
-      }[this.status] || 'bg-ink/10 text-slate'
-    },
-    label() { return this.status }
-  }
-}
+function statusBar(s) { return { OPEN: 'bg-amber-400', RESPONSE: 'bg-blue-400', AWAITING_DECISION: 'bg-purple-400', APPROVED: 'bg-sage', REJECTED: 'bg-red-500' }[s] || 'bg-ink/20' }
+function statusBadge(s) { return { OPEN: 'bg-amber-100 text-amber-700', RESPONSE: 'bg-blue-100 text-blue-700', AWAITING_DECISION: 'bg-purple-100 text-purple-700', APPROVED: 'bg-sage/20 text-sage', REJECTED: 'bg-red-100 text-red-600' }[s] || 'bg-ink/10 text-slate' }
+function formatDate(iso) { if (!iso) return '—'; return new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' }) }
 </script>

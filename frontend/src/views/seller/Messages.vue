@@ -228,7 +228,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SellerNavbar from '../../components/SellerNavbar.vue'
 import { mockSeller, mockUser } from '../../data/mockData.js'
-import { getOrdersBySeller, getMessagesByOrder, sendMessage as sendMessageApi } from '../../services/api.js'
+import { getOrdersBySeller, getMessagesByOrder, sendMessage as sendMessageApi, fetchListings } from '../../services/api.js'
 import { saveDeal, getDeal } from '../../data/negotiationStore.js'
 
 const route   = useRoute()
@@ -293,7 +293,7 @@ onMounted(async () => {
   try {
     const [ordersData, listingsData, messagesData] = await Promise.all([
       getOrdersBySeller(mockSeller.id),
-      fetch('/tmp.json').then(r => r.json()).catch(() => null),
+      fetchListings().catch(() => null),
       getMessagesByOrder(convKey).catch(() => []),
     ])
 

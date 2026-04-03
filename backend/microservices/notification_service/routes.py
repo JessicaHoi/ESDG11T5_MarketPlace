@@ -50,3 +50,19 @@ def send_reminder(dispute_id, notification_id):
 def get_notification(notification_id):
     note = Notification.query.get_or_404(notification_id)
     return jsonify(note.to_dict())
+
+# GET /notification?receiverID=X — Get all notifications for a user
+@bp.route('/notification', methods=['GET'])
+def get_notifications():
+    receiver_id = request.args.get('receiverID', type=int)
+    dispute_id  = request.args.get('disputeID',  type=int)
+
+    query = Notification.query
+
+    if receiver_id is not None:
+        query = query.filter_by(receiverID=receiver_id)
+    if dispute_id is not None:
+        query = query.filter_by(disputeID=dispute_id)
+
+    notes = query.order_by(Notification.sentAt.desc()).all()
+    return jsonify([n.to_dict() for n in notes]), 200

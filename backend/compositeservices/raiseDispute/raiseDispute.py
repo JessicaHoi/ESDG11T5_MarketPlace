@@ -4,7 +4,8 @@ import requests
 import pika
 import json
 import os
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 CORS(app)
@@ -13,6 +14,7 @@ DISPUTE_SERVICE_URL      = os.environ.get("DISPUTE_SERVICE_URL",      "http://di
 PAYMENT_SERVICE_URL      = os.environ.get("PAYMENT_SERVICE_URL",      "http://payment-service:5000")
 ORDER_SERVICE_URL        = os.environ.get("ORDER_SERVICE_URL",        "http://order-service:8000")
 EVIDENCE_SERVICE_URL     = os.environ.get("EVIDENCE_SERVICE_URL",     "http://evidence-service:5003")
+NOTIFICATION_SERVICE_URL = os.environ.get("NOTIFICATION_SERVICE_URL", "http://notification-service:5002")
 RABBITMQ_URL             = os.environ.get("RABBITMQ_URL",             "amqp://guest:guest@rabbitmq:5672/")
 
 
@@ -34,6 +36,25 @@ def publish_event(exchange: str, routing_key: str, payload: dict):
         print(f"[AMQP] WARNING – could not publish event: {exc}")
 
 
+def send_notification_direct(orderID, disputeID, receiverID, message):
+    """Send notification directly to notification service."""
+    try:
+        requests.post(
+            f"{NOTIFICATION_SERVICE_URL}/notification",
+            json={
+                "orderID":      orderID,
+                "disputeID":    disputeID,
+                "notification": message,
+                "receiverID":   receiverID,
+            },
+            timeout=10,
+        )
+        print(f"[notify] Sent to user {receiverID}: {message[:60]}...")
+    except Exception as e:
+        print(f"[notify] WARNING: Could not send notification: {e}")
+
+
+# ── POST /raise-dispute — Create a new dispute ──────────────────────────────
 @app.route("/raise-dispute", methods=["POST"])
 def raise_dispute():
     data = request.get_json()
@@ -51,17 +72,25 @@ def raise_dispute():
     payment_id     = data["paymentID"]
     dispute_reason = data["disputeReason"]
 
+    # Calculate 24-hour deadline
+    now = datetime.utcnow()
+    deadline = now + timedelta(hours=24)
+
     # ---------- Step 1: Create dispute ----------
-    # Use a timestamp-based ID to avoid collisions
-    import time
     dispute_id = int(time.time())
     dispute_resp = requests.post(
         f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}",
         json={
             "disputeReason": dispute_reason,
             "disputeStatus": "OPEN",
-            "createdAt":     datetime.utcnow().isoformat(),
-            "deadlineAt":    None,
+            "description":   data["description"],
+            "orderID":       order_id,
+            "buyerID":       buyer_id,
+            "sellerID":      seller_id,
+            "amount":        data.get("amount", 0),
+            "listingTitle":  data.get("listingTitle", ""),
+            "createdAt":     now.isoformat(),
+            "deadlineAt":    deadline.isoformat(),
         },
         timeout=10,
     )
@@ -99,21 +128,34 @@ def raise_dispute():
 
     # ---------- Step 4: Upload evidence ----------
     evidence_id = None
-    evidence_resp = requests.post(
-        f"{EVIDENCE_SERVICE_URL}/evidence",
-        json={
-            "disputeID":   dispute_id,
-            "description": data["description"],
-            "uploadedBy":  buyer_id,
-            "fileURL":     data["fileURL"],
-            "fileType":    data["fileType"],
-        },
-        timeout=10,
-    )
-    if evidence_resp.status_code not in (200, 201):
-        print(f"[raise-dispute] Step 4 WARNING: Could not upload evidence: {evidence_resp.text}")
-    else:
-        evidence_id = evidence_resp.json().get("data", {}).get("evidenceID")
+    # Support multiple evidence files
+    files_data = data.get("files", [])
+    if not files_data:
+        # Backwards compat: single file from fileURL/fileType
+        files_data = [{
+            "fileURL":  data["fileURL"],
+            "fileType": data["fileType"],
+            "fileName": data.get("fileName", "evidence-file"),
+        }]
+
+    for file_entry in files_data:
+        evidence_resp = requests.post(
+            f"{EVIDENCE_SERVICE_URL}/evidence",
+            json={
+                "disputeID":   dispute_id,
+                "description": data["description"],
+                "uploadedBy":  buyer_id,
+                "fileURL":     file_entry.get("fileURL", ""),
+                "fileType":    file_entry.get("fileType", ""),
+                "fileName":    file_entry.get("fileName", ""),
+            },
+            timeout=10,
+        )
+        if evidence_resp.status_code not in (200, 201):
+            print(f"[raise-dispute] Step 4 WARNING: Could not upload evidence: {evidence_resp.text}")
+        else:
+            if evidence_id is None:
+                evidence_id = evidence_resp.json().get("data", {}).get("evidenceID")
 
     # ---------- Step 5: Publish AMQP event ----------
     publish_event(
@@ -139,6 +181,12 @@ def raise_dispute():
     except Exception as e:
         print(f"[raise-dispute] Step 6 WARNING: Could not update order status: {e}")
 
+    # ---------- Step 7: Notify seller directly ----------
+    send_notification_direct(
+        order_id, dispute_id, seller_id,
+        f"A dispute has been raised for Order #{order_id}. Reason: {dispute_reason}. Please respond within 24 hours."
+    )
+
     return jsonify({
         "code":    201,
         "message": "Dispute raised successfully. Seller notified.",
@@ -147,17 +195,106 @@ def raise_dispute():
             "evidenceID":    evidence_id,
             "paymentStatus": freeze_status,
             "orderDetails":  order_details,
+            "deadlineAt":    deadline.isoformat(),
         },
     }), 201
 
 
+# ── PATCH /raise-dispute/<id>/respond — Seller submits response ──────────────
+@app.route("/raise-dispute/<int:dispute_id>/respond", methods=["PATCH"])
+def seller_respond(dispute_id):
+    data = request.get_json()
+    response_text = data.get("sellerResponse", "")
+    if not response_text:
+        return jsonify({"code": 400, "message": "sellerResponse is required"}), 400
+
+    # Reset 24-hour deadline from now
+    new_deadline = datetime.utcnow() + timedelta(hours=24)
+
+    # Update dispute with seller response
+    update_resp = requests.patch(
+        f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}",
+        json={
+            "sellerResponse": response_text,
+            "disputeStatus":  "RESPONSE",
+            "deadlineAt":     new_deadline.isoformat(),
+        },
+        timeout=10,
+    )
+    if update_resp.status_code != 200:
+        return jsonify({"code": update_resp.status_code, "step": "update_dispute",
+                        "message": update_resp.text}), update_resp.status_code
+
+    # Fetch dispute to get buyer/order info
+    dispute_data = update_resp.json().get("data", {})
+    order_id = dispute_data.get("orderID", 0)
+    buyer_id = dispute_data.get("buyerID", 0)
+
+    # Notify buyer
+    send_notification_direct(
+        order_id, dispute_id, buyer_id,
+        f"Seller has responded to dispute #{dispute_id}. Timer has been reset."
+    )
+
+    # Publish event
+    publish_event("dispute_events", "dispute.seller_responded", {
+        "disputeID": dispute_id, "orderID": order_id,
+    })
+
+    return jsonify({
+        "code": 200,
+        "message": "Seller response recorded. Timer reset.",
+        "data": dispute_data,
+    }), 200
+
+
+# ── PATCH /raise-dispute/<id>/seller-agree — Seller agrees, notify admin ─────
+@app.route("/raise-dispute/<int:dispute_id>/seller-agree", methods=["PATCH"])
+def seller_agree(dispute_id):
+    # Update dispute status
+    update_resp = requests.patch(
+        f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}",
+        json={"disputeStatus": "AWAITING_DECISION"},
+        timeout=10,
+    )
+    if update_resp.status_code != 200:
+        return jsonify({"code": update_resp.status_code, "step": "update_dispute",
+                        "message": update_resp.text}), update_resp.status_code
+
+    dispute_data = update_resp.json().get("data", {})
+    order_id = dispute_data.get("orderID", 0)
+
+    # Notify admin (admin receiverID = 0 by convention)
+    send_notification_direct(
+        order_id, dispute_id, 0,
+        f"Seller has agreed on dispute #{dispute_id}. Admin decision required. Order #{order_id}."
+    )
+
+    # Publish event
+    publish_event("dispute_events", "dispute.seller_agreed", {
+        "disputeID": dispute_id, "orderID": order_id,
+    })
+
+    return jsonify({
+        "code": 200,
+        "message": "Agreement received. Admin has been notified.",
+        "data": dispute_data,
+    }), 200
+
+
+# ── PUT /raise-dispute/<id>/approve-evidence/<eid> ───────────────────────────
 @app.route("/raise-dispute/<int:dispute_id>/approve-evidence/<int:evidence_id>", methods=["PUT"])
 def approve_evidence(dispute_id, evidence_id):
     approve_resp = requests.put(f"{EVIDENCE_SERVICE_URL}/evidence/{evidence_id}/approve", timeout=10)
     if approve_resp.status_code != 200:
-        return jsonify({"code": approve_resp.status_code, "step": "approve_evidence", "message": approve_resp.text}), approve_resp.status_code
+        return jsonify({"code": approve_resp.status_code, "step": "approve_evidence",
+                        "message": approve_resp.text}), approve_resp.status_code
 
-    update_dispute_resp = requests.patch(f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}", json={"disputeStatus": "RESPONSE"}, timeout=10)
+    update_dispute_resp = requests.patch(
+        f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}",
+        json={"disputeStatus": "RESPONSE"},
+        timeout=10,
+    )
 
     return jsonify({
         "code":    200,
@@ -169,6 +306,7 @@ def approve_evidence(dispute_id, evidence_id):
     }), 200
 
 
+# ── POST /raise-dispute/<id>/resolve — Admin approves → refund buyer ─────────
 @app.route("/raise-dispute/<int:dispute_id>/resolve", methods=["POST"])
 def resolve_dispute(dispute_id):
     data = request.get_json()
@@ -177,16 +315,121 @@ def resolve_dispute(dispute_id):
 
     order_id = data["orderID"]
 
-    refund_resp = requests.post(f"{PAYMENT_SERVICE_URL}/payment/refund", json={"orderID": order_id}, timeout=10)
+    # Refund buyer
+    refund_resp = requests.post(f"{PAYMENT_SERVICE_URL}/payment/refund",
+                                json={"orderID": order_id}, timeout=10)
     if refund_resp.status_code != 200:
-        return jsonify({"code": refund_resp.status_code, "step": "refund_payment", "message": refund_resp.text}), refund_resp.status_code
+        # Best-effort: continue even if refund fails (maybe no Stripe in dev)
+        print(f"[resolve] WARNING: Refund failed: {refund_resp.text}")
 
-    requests.patch(f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}", json={"disputeStatus": "RESOLVED"}, timeout=10)
-    requests.put(f"{ORDER_SERVICE_URL}/orders/{order_id}", json={"status": "REFUNDED"}, timeout=10)
+    # Update dispute status
+    requests.patch(f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}",
+                   json={"disputeStatus": "APPROVED"}, timeout=10)
 
-    return jsonify({"code": 200, "message": "Dispute resolved. Buyer refunded.", "data": {"refund": refund_resp.json().get("data")}}), 200
+    # Update order status
+    requests.put(f"{ORDER_SERVICE_URL}/orders/{order_id}",
+                 json={"status": "REFUNDED"}, timeout=10)
+
+    # Fetch dispute for notification info
+    dispute_data = {}
+    try:
+        dr = requests.get(f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}", timeout=10)
+        if dr.status_code == 200:
+            dispute_data = dr.json().get("data", {})
+    except:
+        pass
+
+    buyer_id  = dispute_data.get("buyerID", data.get("buyerID", 0))
+    seller_id = dispute_data.get("sellerID", data.get("sellerID", 0))
+    amount    = dispute_data.get("amount", 0)
+    listing   = dispute_data.get("listingTitle", "")
+
+    # Notify buyer
+    send_notification_direct(
+        order_id, dispute_id, buyer_id,
+        f"Dispute #{dispute_id} APPROVED. Refund of ${amount} issued for '{listing}'. Order #{order_id}."
+    )
+    # Notify seller
+    send_notification_direct(
+        order_id, dispute_id, seller_id,
+        f"Dispute #{dispute_id} APPROVED. Buyer has been refunded ${amount} for '{listing}'. Order #{order_id}."
+    )
+
+    # Publish event
+    publish_event("dispute_events", "dispute.resolved", {
+        "disputeID": dispute_id, "orderID": order_id, "outcome": "APPROVED",
+        "buyerID": buyer_id, "sellerID": seller_id,
+    })
+
+    return jsonify({
+        "code": 200,
+        "message": "Dispute approved. Buyer refunded.",
+        "data": {"refund": refund_resp.json() if refund_resp.status_code == 200 else None},
+    }), 200
 
 
+# ── POST /raise-dispute/<id>/reject — Admin rejects → release to seller ──────
+@app.route("/raise-dispute/<int:dispute_id>/reject", methods=["POST"])
+def reject_dispute(dispute_id):
+    data = request.get_json()
+    if "orderID" not in data:
+        return jsonify({"code": 400, "message": "Missing field: orderID"}), 400
+
+    order_id = data["orderID"]
+
+    # Release payment to seller
+    release_resp = requests.post(f"{PAYMENT_SERVICE_URL}/payment/release",
+                                 json={"orderID": order_id}, timeout=10)
+    if release_resp.status_code != 200:
+        print(f"[reject] WARNING: Release failed: {release_resp.text}")
+
+    # Update dispute status
+    requests.patch(f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}",
+                   json={"disputeStatus": "REJECTED"}, timeout=10)
+
+    # Update order status
+    requests.put(f"{ORDER_SERVICE_URL}/orders/{order_id}",
+                 json={"status": "COMPLETED"}, timeout=10)
+
+    # Fetch dispute for notification info
+    dispute_data = {}
+    try:
+        dr = requests.get(f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}", timeout=10)
+        if dr.status_code == 200:
+            dispute_data = dr.json().get("data", {})
+    except:
+        pass
+
+    buyer_id  = dispute_data.get("buyerID", data.get("buyerID", 0))
+    seller_id = dispute_data.get("sellerID", data.get("sellerID", 0))
+    amount    = dispute_data.get("amount", 0)
+    listing   = dispute_data.get("listingTitle", "")
+
+    # Notify buyer
+    send_notification_direct(
+        order_id, dispute_id, buyer_id,
+        f"Dispute #{dispute_id} REJECTED for '{listing}'. Funds released to seller. Order #{order_id}."
+    )
+    # Notify seller
+    send_notification_direct(
+        order_id, dispute_id, seller_id,
+        f"Dispute #{dispute_id} REJECTED in your favor. ${amount} released to you for '{listing}'. Order #{order_id}."
+    )
+
+    # Publish event
+    publish_event("dispute_events", "dispute.rejected", {
+        "disputeID": dispute_id, "orderID": order_id, "outcome": "REJECTED",
+        "buyerID": buyer_id, "sellerID": seller_id,
+    })
+
+    return jsonify({
+        "code": 200,
+        "message": "Dispute rejected. Payment released to seller.",
+        "data": {"release": release_resp.json() if release_resp.status_code == 200 else None},
+    }), 200
+
+
+# ── Health check ─────────────────────────────────────────────────────────────
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"code": 200, "status": "raiseDispute composite service running"}), 200

@@ -168,8 +168,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
-import { getOrders, confirmOrder, updateOrder } from '../../services/api.js'
-import { getOrderStatusFromDispute } from '../../data/disputeStore.js'
+import { getOrders, confirmOrder, updateOrder, fetchListings } from '../../services/api.js'
 
 const route  = useRoute()
 const router = useRouter()
@@ -192,19 +191,15 @@ onMounted(async () => {
   try {
     const [ordersData, listingsData] = await Promise.all([
       getOrders(),
-      fetch('/tmp.json').then(r => r.json()).catch(() => null),
+      fetchListings().catch(() => null),
     ])
     const all = Array.isArray(ordersData) ? ordersData : (ordersData.orders ?? [])
     const found = all.find(o => o.order_id === orderID)
     if (found) {
-      // Apply dispute override if applicable
-      const overrideStatus = getOrderStatusFromDispute(found.order_id)
-      order.value = overrideStatus
-        ? { ...found, status: overrideStatus }
-        : found
+      order.value = found
     }
     // Build image lookup
-    const listings = listingsData?.data?.listings ?? []
+    const listings = listingsData?.data?.listings ?? listingsData?.listings ?? []
     listings.forEach(l => {
       if (l.listingImgUrl && l.listingImgUrl.length > 5) {
         listingImages.value[l.listingID] = l.listingImgUrl

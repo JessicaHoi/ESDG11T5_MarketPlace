@@ -68,6 +68,10 @@
           Buyer?
           <router-link to="/login" class="text-accent hover:underline ml-1">Buyer login →</router-link>
         </p>
+        <p class="mt-2 text-center text-xs text-muted">
+          Admin?
+          <router-link to="/admin" class="text-accent hover:underline ml-1">Admin login →</router-link>
+        </p>
       </div>
     </div>
   </div>

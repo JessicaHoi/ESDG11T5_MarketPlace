@@ -135,8 +135,7 @@
 import { ref, computed, onMounted, onActivated } from 'vue'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
-import { getOrders, confirmOrder } from '../../services/api.js'
-import { getOrderStatusFromDispute } from '../../data/disputeStore.js'
+import { getOrders, confirmOrder, fetchListings } from '../../services/api.js'
 
 const orders      = ref([])
 const loading     = ref(true)
@@ -162,14 +161,14 @@ onMounted(async () => {
   try {
     const [ordersData, listingsData] = await Promise.all([
       getOrders(),
-      fetch('/tmp.json').then(r => r.json()).catch(() => null),
+      fetchListings().catch(() => null),
     ])
     const rawOrders = Array.isArray(ordersData) ? ordersData : (ordersData.orders ?? [])
     // Sort newest first
     rawOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-    orders.value = applyDisputeOverrides(rawOrders)
+    orders.value = rawOrders
     // Build lookup map: listingID → listingImgUrl
-    const listings = listingsData?.data?.listings ?? []
+    const listings = listingsData?.data?.listings ?? listingsData?.listings ?? []
     listings.forEach(l => {
       if (l.listingImgUrl && l.listingImgUrl.length > 5) {
         listingImages.value[l.listingID] = l.listingImgUrl
@@ -182,22 +181,15 @@ onMounted(async () => {
   }
 })
 
-// Re-apply dispute overrides every time the user navigates back to this page
-// (handles the case where admin resolved a dispute while user was elsewhere)
-onActivated(() => {
-  if (orders.value.length > 0) {
-    orders.value = applyDisputeOverrides(orders.value)
-  }
+// Re-fetch orders when user navigates back to this page
+onActivated(async () => {
+  try {
+    const ordersData = await getOrders()
+    const rawOrders = Array.isArray(ordersData) ? ordersData : (ordersData.orders ?? [])
+    rawOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    orders.value = rawOrders
+  } catch {}
 })
-
-function applyDisputeOverrides(rawOrders) {
-  return rawOrders.map(order => {
-    if (order.status !== 'DISPUTED') return order
-    const overrideStatus = getOrderStatusFromDispute(order.order_id)
-    if (!overrideStatus) return order
-    return { ...order, status: overrideStatus }
-  })
-}
 
 async function handleConfirmReceipt(order) {
   confirmingID.value = order.order_id

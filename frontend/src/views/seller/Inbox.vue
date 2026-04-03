@@ -73,7 +73,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import SellerNavbar from '../../components/SellerNavbar.vue'
 import { mockSeller } from '../../data/mockData.js'
-import { getMessagesByReceiver } from '../../services/api.js'
+import { getMessagesByReceiver, fetchListings } from '../../services/api.js'
 
 const router  = useRouter()
 const loading = ref(true)
@@ -124,12 +124,12 @@ onMounted(async () => {
   try {
     const [messagesData, listingsData] = await Promise.all([
       getMessagesByReceiver(mockSeller.id),
-      fetch('/tmp.json').then(r => r.json()).catch(() => null),
+      fetchListings().catch(() => null),
     ])
 
     allMessages.value = Array.isArray(messagesData) ? messagesData : []
 
-    const listings = listingsData?.data?.listings ?? []
+    const listings = listingsData?.data?.listings ?? listingsData?.listings ?? []
     listings.forEach(l => {
       if (l.listingImgUrl && l.listingImgUrl.length > 5) {
         listingImages.value[l.listingID] = l.listingImgUrl
