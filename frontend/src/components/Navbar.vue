@@ -10,6 +10,7 @@
         </div>
       </div>
       <div class="flex items-center gap-4">
+        <NotificationBell :receiverID="user?.id ?? 1" />
         <router-link
           v-if="user"
           to="/profile"
@@ -26,6 +27,7 @@
 </template>
 
 <script setup>
+import NotificationBell from './NotificationBell.vue'
 defineProps({
   user: Object
 })

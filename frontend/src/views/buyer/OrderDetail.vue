@@ -186,7 +186,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
-import { getOrders, confirmOrder, updateOrder, fetchListings, getDisputes, getDisputesByOrder } from '../../services/api.js'
+import { getOrders, confirmOrder, updateOrder, fetchListings, getDisputes, getDisputesByOrder, sendNotification } from '../../services/api.js'
 
 const route  = useRoute()
 const router = useRouter()
@@ -287,8 +287,21 @@ async function handleConfirmReceipt() {
   confirming.value = true
   actionError.value = null
   try {
+    // Capture seller_id and amount BEFORE the API call overwrites order.value
+    const sellerID = order.value.seller_id
+    const amount   = order.value.agreed_price
+
     const updated = await confirmOrder(orderID)
     order.value = updated
+
+    // Notify seller that buyer confirmed receipt and funds are released
+    sendNotification({
+      orderID:      orderID,
+      disputeID:    null,
+      notification: `[TradeNest] Great news! Buyer has confirmed receipt for Order #${orderID}. Your funds of ${amount} have been released to you.`,
+      receiverID:   sellerID,
+    }).catch(() => {})
+
   } catch (err) {
     actionError.value = err.message || 'Failed to confirm receipt.'
   } finally {

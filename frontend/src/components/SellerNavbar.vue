@@ -14,6 +14,7 @@
         </div>
       </div>
       <div class="flex items-center gap-4">
+        <NotificationBell :receiverID="seller?.id ?? 2" />
         <span class="text-sm font-mono text-slate border border-ink/10 px-3 py-1 bg-white">{{ seller.name }}</span>
         <button
           @click="$router.push('/seller')"
@@ -25,5 +26,6 @@
 </template>
 
 <script setup>
+import NotificationBell from './NotificationBell.vue'
 defineProps({ seller: { type: Object, required: true } })
 </script>

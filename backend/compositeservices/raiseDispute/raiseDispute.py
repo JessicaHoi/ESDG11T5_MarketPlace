@@ -17,6 +17,17 @@ EVIDENCE_SERVICE_URL     = os.environ.get("EVIDENCE_SERVICE_URL",     "http://ev
 NOTIFICATION_SERVICE_URL = os.environ.get("NOTIFICATION_SERVICE_URL", "http://notification-service:5002")
 RABBITMQ_URL             = os.environ.get("RABBITMQ_URL",             "amqp://guest:guest@rabbitmq:5672/")
 
+# Phone numbers from environment
+BUYER_PHONE  = os.environ.get("BUYER_PHONE")
+SELLER_PHONE = os.environ.get("SELLER_PHONE")
+ADMIN_PHONE  = os.environ.get("ADMIN_PHONE")
+
+PHONE_MAP = {
+    1:  BUYER_PHONE,
+    2:  SELLER_PHONE,
+    99: ADMIN_PHONE,
+}
+
 
 def publish_event(exchange: str, routing_key: str, payload: dict):
     try:
@@ -37,15 +48,16 @@ def publish_event(exchange: str, routing_key: str, payload: dict):
 
 
 def send_notification_direct(orderID, disputeID, receiverID, message):
-    """Send notification directly to notification service."""
+    """Send notification to notification service — triggers SMS automatically."""
     try:
         requests.post(
             f"{NOTIFICATION_SERVICE_URL}/notification",
             json={
-                "orderID":      orderID,
-                "disputeID":    disputeID,
-                "notification": message,
-                "receiverID":   receiverID,
+                "orderID":       orderID,
+                "disputeID":     disputeID,
+                "notification":  message,
+                "receiverID":    receiverID,
+                "receiverPhone": PHONE_MAP.get(receiverID),  # pass phone so SMS fires
             },
             timeout=10,
         )
@@ -181,10 +193,24 @@ def raise_dispute():
     except Exception as e:
         print(f"[raise-dispute] Step 6 WARNING: Could not update order status: {e}")
 
-    # ---------- Step 7: Notify seller directly ----------
+    # ---------- Step 7: Notify seller and admin ----------
+    listing_title = data.get('listingTitle', f'Order #{order_id}')
+    amount        = data.get('amount', 0)
+
+    # Notify seller
     send_notification_direct(
         order_id, dispute_id, seller_id,
-        f"A dispute has been raised for Order #{order_id}. Reason: {dispute_reason}. Please respond within 24 hours."
+        f"[TradeNest] A dispute has been raised against your listing '{listing_title}' "
+        f"(Order #{order_id}, Dispute #{dispute_id}). "
+        f"Reason: {dispute_reason.replace('_', ' ')}. "
+        f"You have 24 hours to respond."
+    )
+    # Notify admin
+    send_notification_direct(
+        order_id, dispute_id, 99,
+        f"[TradeNest] New dispute raised. Dispute #{dispute_id}, Order #{order_id}. "
+        f"Listing: '{listing_title}', Amount: ${amount}. "
+        f"Reason: {dispute_reason.replace('_', ' ')}. Awaiting seller response."
     )
 
     return jsonify({
@@ -233,7 +259,12 @@ def seller_respond(dispute_id):
     # Notify buyer
     send_notification_direct(
         order_id, dispute_id, buyer_id,
-        f"Seller has responded to dispute #{dispute_id}. Timer has been reset."
+        f"[TradeNest] Seller has responded to Dispute #{dispute_id} for Order #{order_id}. Please review their response."
+    )
+    # Notify admin
+    send_notification_direct(
+        order_id, dispute_id, 99,
+        f"[TradeNest] Seller has responded to Dispute #{dispute_id} for Order #{order_id}. Awaiting further action."
     )
 
     # Publish event
@@ -264,15 +295,20 @@ def seller_agree(dispute_id):
     dispute_data = update_resp.json().get("data", {})
     order_id = dispute_data.get("orderID", 0)
 
-    # Notify admin (admin receiverID = 0 by convention)
+    # Notify admin (receiverID=99)
     send_notification_direct(
-        order_id, dispute_id, 0,
-        f"Seller has agreed on dispute #{dispute_id}. Admin decision required. Order #{order_id}."
+        order_id, dispute_id, 99,
+        f"[TradeNest] Seller has agreed on Dispute #{dispute_id}. Admin decision required for Order #{order_id}. Please review and make a final decision."
     )
 
     # Publish event
     publish_event("dispute_events", "dispute.seller_agreed", {
-        "disputeID": dispute_id, "orderID": order_id,
+        "disputeID": dispute_id,
+        "orderID":   order_id,
+        "buyerID":   dispute_data.get("buyerID", 0),
+        "sellerID":  dispute_data.get("sellerID", 0),
+        "amount":    dispute_data.get("amount", 0),
+        "listingTitle": dispute_data.get("listingTitle", ""),
     })
 
     return jsonify({
@@ -347,18 +383,23 @@ def resolve_dispute(dispute_id):
     # Notify buyer
     send_notification_direct(
         order_id, dispute_id, buyer_id,
-        f"Dispute #{dispute_id} APPROVED. Refund of ${amount} issued for '{listing}'. Order #{order_id}."
+        f"[TradeNest] ✅ Dispute #{dispute_id} APPROVED. "
+        f"You will be refunded ${amount} for '{listing}'. "
+        f"Order #{order_id}. Funds will be returned to your original payment method."
     )
     # Notify seller
     send_notification_direct(
         order_id, dispute_id, seller_id,
-        f"Dispute #{dispute_id} APPROVED. Buyer has been refunded ${amount} for '{listing}'. Order #{order_id}."
+        f"[TradeNest] Dispute #{dispute_id} outcome: APPROVED in buyer's favour. "
+        f"Buyer has been refunded ${amount} for '{listing}'. "
+        f"Order #{order_id}."
     )
 
     # Publish event
     publish_event("dispute_events", "dispute.resolved", {
         "disputeID": dispute_id, "orderID": order_id, "outcome": "APPROVED",
         "buyerID": buyer_id, "sellerID": seller_id,
+        "amount": amount, "listingTitle": listing,
     })
 
     return jsonify({
@@ -408,12 +449,16 @@ def reject_dispute(dispute_id):
     # Notify buyer
     send_notification_direct(
         order_id, dispute_id, buyer_id,
-        f"Dispute #{dispute_id} REJECTED for '{listing}'. Funds released to seller. Order #{order_id}."
+        f"[TradeNest] Dispute #{dispute_id} outcome: REJECTED. "
+        f"Funds of ${amount} have been released to the seller for '{listing}'. "
+        f"Order #{order_id}."
     )
     # Notify seller
     send_notification_direct(
         order_id, dispute_id, seller_id,
-        f"Dispute #{dispute_id} REJECTED in your favor. ${amount} released to you for '{listing}'. Order #{order_id}."
+        f"[TradeNest] ✅ Dispute #{dispute_id} REJECTED in your favour. "
+        f"${amount} has been released to you for '{listing}'. "
+        f"Order #{order_id}."
     )
 
     # Publish event

@@ -21,4 +21,4 @@ if __name__ == '__main__':
     t = threading.Thread(target=start_consumer, args=(app, db, __import__('models').Notification), daemon=True)
     t.start()
 
-    app.run(host='0.0.0.0', port=5002, debug=True, use_reloader=False)
+    app.run(host='0.0.0.0', port=5002, debug=False, use_reloader=False, threaded=True)

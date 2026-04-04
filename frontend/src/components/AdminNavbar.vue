@@ -11,6 +11,7 @@
         </div>
       </div>
       <div class="flex items-center gap-4">
+        <NotificationBell :receiverID="99" />
         <span class="text-sm font-mono text-white/40 border border-white/10 px-3 py-1">admin@tradenest.sg</span>
         <button
           @click="$router.push('/admin')"
@@ -22,4 +23,5 @@
 </template>
 
 <script setup>
+import NotificationBell from './NotificationBell.vue'
 </script>

@@ -228,7 +228,7 @@ import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
-import { fetchListingById, sendMessage as sendMessageToBackend, getMessagesByOrder } from '../../services/api.js'
+import { fetchListingById, sendMessage as sendMessageToBackend, getMessagesByOrder, sendNotification } from '../../services/api.js'
 import { getDeal, saveDeal } from '../../data/negotiationStore.js'
 
 const route = useRoute()
@@ -382,12 +382,33 @@ function addLocalMessage(msg) {
   scrollToBottom()
 }
 
+// Persist negotiate notif flag in sessionStorage so it survives re-mounts
+function hasNotifBeenSent(listingID) {
+  return sessionStorage.getItem(`negotiate_notif_${listingID}`) === '1'
+}
+function markNotifSent(listingID) {
+  sessionStorage.setItem(`negotiate_notif_${listingID}`, '1')
+}
+
 function sendMessage() {
   if (!newMessage.value.trim()) return
   const text = newMessage.value
   newMessage.value = ''
   addLocalMessage({ id: `local_${Date.now()}`, sender: 'buyer', type: 'text', text, content: text, time: timestamp() })
   persistToBackend(text)
+
+  // Notify seller via SMS the first time buyer sends a message (Negotiate trigger)
+  const listingID = parseInt(route.params.id)
+  if (!hasNotifBeenSent(listingID) && listing.value) {
+    markNotifSent(listingID)
+    const sellerID = listing.value.sellerID ?? listing.value.sellerId ?? 2
+    sendNotification({
+      orderID:      0,
+      disputeID:    null,
+      notification: `[TradeNest] ${mockUser.name} is interested in your listing: '${listing.value.listingName}' (${listing.value.listingPrice}). They have started a negotiation chat with you.`,
+      receiverID:   sellerID,
+    }).catch(() => {})
+  }
 }
 
 function sendQuickMessage(text) {

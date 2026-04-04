@@ -3,11 +3,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ORDER_URL     = os.environ.get("ORDER_SERVICE_URL")
-PAYMENT_URL   = os.environ.get("PAYMENT_SERVICE_URL")
-LISTING_URL   = os.environ.get("LISTING_SERVICE_URL")
-MESSAGING_URL = os.environ.get("MESSAGING_SERVICE_URL")
-RABBITMQ_URL  = os.environ.get("RABBITMQ_URL")
+ORDER_URL        = os.environ.get("ORDER_SERVICE_URL")
+PAYMENT_URL      = os.environ.get("PAYMENT_SERVICE_URL")
+LISTING_URL      = os.environ.get("LISTING_SERVICE_URL")
+MESSAGING_URL    = os.environ.get("MESSAGING_SERVICE_URL")
+NOTIFICATION_URL = os.environ.get("NOTIFICATION_SERVICE_URL", "http://notification-service:5002")
+RABBITMQ_URL     = os.environ.get("RABBITMQ_URL")
+SELLER_PHONE     = os.environ.get("SELLER_PHONE")
 
 
 def safe_json(resp):
@@ -102,10 +104,32 @@ def place_order(data: dict):
 
     # ---------- Step 5: Mark listing as sold (OutSystems) ----------
     # TODO: Uncomment once OutSystems Listing Service URL is available
-    # sold_resp = requests.put(f"{LISTING_URL}/listing/{listing_id}/sold", json={"status": "SOLD"})
-    # if sold_resp.status_code != 200:
-    #     return {"error": "Step 5 failed: Could not mark listing as sold", "details": safe_json(sold_resp)}, 400
     print(f"[5] SKIPPED — Listing mark-as-sold bypassed. listing_id={listing_id}")
+
+    # ---------- Step 5b: Notify seller via SMS ----------
+    print(f"[5b] Notifying seller via SMS...")
+    delivery_option = data.get('deliveryOption', 'meetup')
+    delivery_text = 'Shipping' if delivery_option == 'shipping' else 'Self-collection / Meetup'
+    sms_body = (
+        f"[TradeNest] Payment received! "
+        f"Buyer has paid ${amount} for '{listing_title}' (Listing #{listing_id}). "
+        f"Delivery method: {delivery_text}. "
+        f"Order #{order_id}. Please arrange handover with the buyer."
+    )
+    try:
+        requests.post(
+            f"{NOTIFICATION_URL}/notification",
+            json={
+                "orderID":       order_id,
+                "notification":  sms_body,
+                "receiverID":    seller_id,
+                "receiverPhone": SELLER_PHONE,
+            },
+            timeout=10,
+        )
+        print(f"[5b] Seller notification sent")
+    except Exception as e:
+        print(f"[5b] WARNING: Could not send seller notification: {e}")
 
     # ---------- Step 6: Notify buyer and seller via AMQP ----------
     print(f"[6] Publishing order.placed event...")

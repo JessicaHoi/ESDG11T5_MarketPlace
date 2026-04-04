@@ -29,6 +29,11 @@ services:
     container_name: order_service
     ports:
       - "5001:8000"
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     networks:
       - marketplace_network
 
@@ -220,6 +225,18 @@ services:
     environment:
       - DB_URL=mysql+mysqlconnector://root:root@notification-db:3306/notification_db
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+      - BUYER_PHONE=${BUYER_PHONE}
+      - SELLER_PHONE=${SELLER_PHONE}
+      - ADMIN_PHONE=${ADMIN_PHONE}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+      - BUYER_PHONE=${BUYER_PHONE}
+      - SELLER_PHONE=${SELLER_PHONE}
+      - ADMIN_PHONE=${ADMIN_PHONE}
     depends_on:
       notification-db:
         condition: service_healthy
@@ -244,7 +261,9 @@ services:
       - PAYMENT_SERVICE_URL=http://payment-service:5000
       - LISTING_SERVICE_URL=${LISTING_SERVICE_URL}
       - MESSAGING_SERVICE_URL=http://messaging-service:5003
+      - NOTIFICATION_SERVICE_URL=http://notification-service:5002
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - SELLER_PHONE=${SELLER_PHONE}
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -274,6 +293,10 @@ services:
       - ORDER_SERVICE_URL=http://order-service:8000
       - EVIDENCE_SERVICE_URL=http://evidence-service:5003
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - NOTIFICATION_SERVICE_URL=http://notification-service:5002
+      - BUYER_PHONE=${BUYER_PHONE}
+      - SELLER_PHONE=${SELLER_PHONE}
+      - ADMIN_PHONE=${ADMIN_PHONE}
     depends_on:
       rabbitmq:
         condition: service_healthy

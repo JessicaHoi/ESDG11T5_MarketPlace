@@ -5,6 +5,27 @@ from typing import Optional, List
 from datetime import datetime
 from enum import Enum
 
+import pika, json, os
+
+def publish_event(routing_key: str, payload: dict):
+    try:
+        rabbitmq_url = os.environ.get("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
+        params = pika.URLParameters(rabbitmq_url)
+        conn = pika.BlockingConnection(params)
+        ch = conn.channel()
+        ch.exchange_declare(exchange='order_events', exchange_type='topic', durable=True)
+        ch.basic_publish(
+            exchange='order_events',
+            routing_key=routing_key,
+            body=json.dumps(payload),
+            properties=pika.BasicProperties(delivery_mode=2)
+        )
+        conn.close()
+        print(f"[→] Published: {routing_key}")
+    except Exception as e:
+        print(f"[!] Could not publish {routing_key}: {e}")
+
+
 app = FastAPI(title="Order Service")
 
 app.add_middleware(
@@ -179,5 +200,13 @@ def confirm_order(order_id: int):
             updated_data["status"] = OrderStatus.COMPLETED
             updated_order = Order(**updated_data)
             orders_db[index] = updated_order
+            # Publish event so notification service sends SMS to buyer + seller
+            publish_event('order.confirmed', {
+                'orderID':  order_id,
+                'buyerID':  updated_order.buyer_id,
+                'sellerID': updated_order.seller_id,
+                'amount':   updated_order.agreed_price,
+                'listingTitle': updated_order.order_details or f'Listing #{updated_order.listing_id}',
+            })
             return updated_order
     raise HTTPException(status_code=404, detail="Order not found")

@@ -341,6 +341,7 @@ async function handlePayment() {
       listingTitle:    listing.value.title,
       message:         `Hi! I'd like to purchase your ${listing.value.title}.`,
       paymentMethodID: STRIPE_TEST_PM,
+      deliveryOption:  delivery.value,
     })
 
     orderResult.value = result
