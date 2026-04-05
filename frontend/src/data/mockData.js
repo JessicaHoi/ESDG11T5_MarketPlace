@@ -191,7 +191,7 @@ export const mockUser = {
   id: 1,
   name: 'Mark Foo',
   email: 'mark@tradenest.sg',
-  phone: '+6591234567',
+  phone: '+6597213876',
   role: 'buyer',
   address: 'Blk 123 Tampines Street 45, #08-12, Singapore 520123',
 }
@@ -207,7 +207,7 @@ export const mockSeller = {
   id: 2,
   name: 'Ryan T.',
   email: 'ryan@tradenest.sg',
-  phone: '+65 9876 5432',
+  phone: '+6597213876',
   role: 'seller',
   address: 'Blk 456 Tampines Street 12, #03-08, Singapore 521456',
 }

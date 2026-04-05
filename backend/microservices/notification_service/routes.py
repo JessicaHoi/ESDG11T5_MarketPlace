@@ -3,11 +3,11 @@ from models import db, Notification
 from twilio_client import send_sms
 import os
 import json
-import time
 import queue
 import threading
 
 bp = Blueprint('notifications', __name__)
+
 
 # ── SSE subscriber registry ───────────────────────────────────────────────────
 _subscribers: dict[int, set] = {}
@@ -32,7 +32,7 @@ def _unregister(receiver_id: int, q: queue.Queue):
 def _push(receiver_id: int, data: dict):
     with _lock:
         queues = list(_subscribers.get(receiver_id, set()))
-    print(f"[SSE] Pushing to receiverID={receiver_id} — {len(queues)} active connection(s)")
+    print(f"[SSE] Pushing to receiverID={receiver_id} — {len(queues)} active connection(s)", flush=True)
     for q in queues:
         try:
             q.put_nowait(data)
@@ -41,13 +41,28 @@ def _push(receiver_id: int, data: dict):
 
 
 # ── Phone number lookup ───────────────────────────────────────────────────────
-def get_phone(user_id: int) -> str | None:
+def get_phone(user_id: int):
     phone_map = {
         1:  os.environ.get("BUYER_PHONE"),
         2:  os.environ.get("SELLER_PHONE"),
         99: os.environ.get("ADMIN_PHONE"),
     }
     return phone_map.get(user_id)
+
+
+# ── Background worker: push SSE + send SMS ────────────────────────────────────
+def _notify_async(receiver_id: int, message: str, receiver_phone: str, note_dict: dict):
+    """Runs in a background thread — pushes SSE and sends SMS."""
+    # Push to SSE
+    _push(receiver_id, note_dict)
+
+    # Send SMS
+    print(f"[SMS] Attempting to {receiver_phone}: {message[:60]}", flush=True)
+    try:
+        send_sms(to_number=receiver_phone, message=message)
+        print(f"[✓] SMS sent to {receiver_phone}", flush=True)
+    except Exception as e:
+        print(f"[!] SMS failed to {receiver_phone}: {e}", flush=True)
 
 
 # ── GET /notification/stream?receiverID=X — SSE stream ───────────────────────
@@ -61,7 +76,7 @@ def stream_notifications():
 
     def event_stream():
         yield f"event: connected\ndata: {json.dumps({'receiverID': receiver_id})}\n\n"
-        print(f"[SSE] Connection opened for receiverID={receiver_id}")
+        print(f"[SSE] Connection opened for receiverID={receiver_id}", flush=True)
         try:
             while True:
                 try:
@@ -73,7 +88,7 @@ def stream_notifications():
             pass
         finally:
             _unregister(receiver_id, q)
-            print(f"[SSE] Connection closed for receiverID={receiver_id}")
+            print(f"[SSE] Connection closed for receiverID={receiver_id}", flush=True)
 
     return Response(
         stream_with_context(event_stream()),
@@ -88,10 +103,12 @@ def stream_notifications():
     )
 
 
-# ── POST /notification — Save, push via SSE, send SMS ────────────────────────
+# ── POST /notification ────────────────────────────────────────────────────────
 @bp.route('/notification', methods=['POST'])
 def send_notification():
     data = request.get_json()
+
+    # Save to DB first (fast, synchronous)
     note = Notification(
         orderID=data['orderID'],
         disputeID=data.get('disputeID'),
@@ -101,24 +118,28 @@ def send_notification():
     db.session.add(note)
     db.session.commit()
 
-    receiver_id = data['receiverID']
-
-    # Push to SSE
-    _push(receiver_id, note.to_dict())
-
-    # Send SMS in a background thread so it doesn't get killed by Flask's threading model
+    receiver_id    = data['receiverID']
+    message        = data['notification']
     receiver_phone = data.get('receiverPhone') or get_phone(receiver_id)
-    print(f"[SMS] Will attempt to send to receiverID={receiver_id}, phone={receiver_phone}")
-    if receiver_phone:
-        def _send():
-            try:
-                send_sms(to_number=receiver_phone, message=data['notification'])
-                print(f"[✓] SMS sent to {receiver_phone}")
-            except Exception as e:
-                print(f"[!] SMS failed: {e}")
-        threading.Thread(target=_send, daemon=True).start()
+    note_dict      = note.to_dict()
 
-    return jsonify(note.to_dict()), 201
+    # Return immediately — do SSE push + SMS in background thread
+    if receiver_phone:
+        threading.Thread(
+            target=_notify_async,
+            args=(receiver_id, message, receiver_phone, note_dict),
+            daemon=True
+        ).start()
+    else:
+        # No phone — just push SSE (no SMS)
+        threading.Thread(
+            target=_push,
+            args=(receiver_id, note_dict),
+            daemon=True
+        ).start()
+        print(f"[!] No phone for receiverID={receiver_id} — SSE only", flush=True)
+
+    return jsonify(note_dict), 201
 
 
 # ── POST /notification/<disputeID>/<notificationID> — Reminder ───────────────
@@ -136,17 +157,20 @@ def send_reminder(dispute_id, notification_id):
     db.session.add(reminder)
     db.session.commit()
 
-    _push(original.receiverID, reminder.to_dict())
-
-    data = request.get_json(silent=True) or {}
+    data           = request.get_json(silent=True) or {}
     receiver_phone = data.get('receiverPhone') or get_phone(original.receiverID)
-    if receiver_phone:
-        try:
-            send_sms(to_number=receiver_phone, message=reminder_text)
-        except Exception as e:
-            print(f"[!] Reminder SMS failed: {e}")
+    note_dict      = reminder.to_dict()
 
-    return jsonify(reminder.to_dict()), 201
+    if receiver_phone:
+        threading.Thread(
+            target=_notify_async,
+            args=(original.receiverID, reminder_text, receiver_phone, note_dict),
+            daemon=True
+        ).start()
+    else:
+        threading.Thread(target=_push, args=(original.receiverID, note_dict), daemon=True).start()
+
+    return jsonify(note_dict), 201
 
 
 # ── GET /notification/<notificationID> ───────────────────────────────────────

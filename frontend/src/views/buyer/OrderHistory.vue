@@ -150,6 +150,7 @@ const tabs = [
   { label: 'In Escrow',   value: 'RESERVED' },
   { label: 'Completed',   value: 'COMPLETED' },
   { label: 'Disputes',    value: 'DISPUTED' },
+  { label: 'Refunded',    value: 'REFUNDED' },
 ]
 
 const filteredOrders = computed(() => {

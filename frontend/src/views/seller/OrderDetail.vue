@@ -121,8 +121,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SellerNavbar from '../../components/SellerNavbar.vue'
-import { mockSeller } from '../../data/mockData.js'
-import { getOrdersBySeller, updateOrder, fetchListings, getDisputes } from '../../services/api.js'
+import { mockSeller, mockUser } from '../../data/mockData.js'
+import { getOrdersBySeller, updateOrder, fetchListings, getDisputes, sendNotification } from '../../services/api.js'
 
 const route   = useRoute()
 const router  = useRouter()
@@ -164,11 +164,23 @@ async function handleMarkShipped() {
   marking.value     = true
   actionError.value = null
   try {
-    // Seller marks delivered — buyer still needs to confirm receipt to release funds
-    // We update order_details to note delivery, status stays RESERVED until buyer confirms
+    const buyerID = order.value.buyer_id
+    const amount  = order.value.agreed_price
+    const title   = order.value.order_details || `Listing #${order.value.listing_id}`
+
     const updated = await updateOrder(orderID, { order_details: order.value.order_details + ' [Delivered]' })
-    order.value = updated
+    order.value   = updated
     delivered.value = true
+
+    // Bell notification + SMS to buyer — pass phone explicitly so SMS fires
+    sendNotification({
+      orderID:       orderID,
+      disputeID:     null,
+      notification:  `[TradeNest] Your item '${title}' has been marked as delivered for Order #${orderID} (${amount}). Please confirm receipt once you receive it.`,
+      receiverID:    buyerID,
+      receiverPhone: mockUser.phone,
+    }).catch(() => {})
+
   } catch (err) {
     actionError.value = err.message || 'Failed to update order.'
   } finally {

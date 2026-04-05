@@ -21,4 +21,8 @@ if __name__ == '__main__':
     t = threading.Thread(target=start_consumer, args=(app, db, __import__('models').Notification), daemon=True)
     t.start()
 
-    app.run(host='0.0.0.0', port=5002, debug=False, use_reloader=False, threaded=True)
+    # Use werkzeug server with a large thread pool so SSE connections
+    # don't starve regular POST /notification requests
+    from werkzeug.serving import make_server
+    server = make_server('0.0.0.0', 5002, app, threaded=True)
+    server.serve_forever()

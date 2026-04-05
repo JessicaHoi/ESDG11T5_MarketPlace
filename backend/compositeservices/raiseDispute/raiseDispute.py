@@ -293,12 +293,18 @@ def seller_agree(dispute_id):
                         "message": update_resp.text}), update_resp.status_code
 
     dispute_data = update_resp.json().get("data", {})
-    order_id = dispute_data.get("orderID", 0)
+    order_id  = dispute_data.get("orderID", 0)
+    buyer_id  = dispute_data.get("buyerID", 0)
 
-    # Notify admin (receiverID=99)
+    # Notify admin
     send_notification_direct(
         order_id, dispute_id, 99,
         f"[TradeNest] Seller has agreed on Dispute #{dispute_id}. Admin decision required for Order #{order_id}. Please review and make a final decision."
+    )
+    # Notify buyer that seller has acknowledged the dispute
+    send_notification_direct(
+        order_id, dispute_id, buyer_id,
+        f"[TradeNest] The seller has acknowledged Dispute #{dispute_id} for Order #{order_id}. An admin will now review and make a final decision."
     )
 
     # Publish event

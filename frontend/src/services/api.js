@@ -125,8 +125,8 @@ export function getNotification(notificationID) {
   return get(`/notification/${notificationID}`)
 }
 
-export function sendNotification({ orderID, disputeID, notification, receiverID }) {
-  return post('/notification', { orderID, disputeID, notification, receiverID })
+export function sendNotification({ orderID, disputeID, notification, receiverID, receiverPhone }) {
+  return post('/notification', { orderID, disputeID, notification, receiverID, receiverPhone })
 }
 
 export function getNotificationsByReceiver(receiverID) {

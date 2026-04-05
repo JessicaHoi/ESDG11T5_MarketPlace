@@ -71,7 +71,7 @@
                 <div v-if="msg.type === 'offer'" class="border-2 p-3 mb-1"
                   :class="msg.sender === 'buyer' ? 'border-accent bg-accent/5' : 'border-ink/20 bg-white'"
                 >
-                  <p class="section-label text-accent mb-1">{{ msg.sender === 'buyer' ? 'Your Offer' : 'Counter Offer' }}</p>
+                  <p class="section-label text-accent mb-1">{{ msg.sender === 'buyer' ? 'Your Offer' : 'Final Offer' }}</p>
                   <p class="font-display font-bold text-2xl text-ink">${{ msg.offerAmount }}</p>
                   <p class="text-xs text-muted font-mono mt-1">
                     {{ msg.sender === 'buyer' ? `Down from $${listing.listingPrice}` : `Original: $${listing.listingPrice}` }}
@@ -79,7 +79,6 @@
                   <!-- Accept/reject buttons on seller offers (shown to buyer) -->
                   <div v-if="msg.sender === 'seller' && !agreedPrice && msg.id === lastSellerOfferId" class="flex gap-2 mt-3">
                     <button @click="acceptOffer(msg.offerAmount)" class="btn-primary text-xs px-3 py-1.5 flex-1">Accept ${{ msg.offerAmount }}</button>
-                    <button @click="triggerCounterOffer" class="btn-secondary text-xs px-3 py-1.5 flex-1">Counter</button>
                   </div>
                 </div>
 
@@ -227,7 +226,7 @@
 import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
-import { mockUser } from '../../data/mockData.js'
+import { mockUser, mockSeller } from '../../data/mockData.js'
 import { fetchListingById, sendMessage as sendMessageToBackend, getMessagesByOrder, sendNotification } from '../../services/api.js'
 import { getDeal, saveDeal } from '../../data/negotiationStore.js'
 
@@ -268,7 +267,7 @@ onMounted(async () => {
       text:        m.content,
       offerAmount: m.offerAmount,
       time:        m.sentAt
-        ? new Date(m.sentAt).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' })
+        ? new Date(m.sentAt.includes('T') ? m.sentAt : m.sentAt.replace(' ', 'T') + 'Z').toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' })
         : timestamp(),
     }))
     // Restore agreed price — check messages first, then localStorage
@@ -305,7 +304,7 @@ onMounted(async () => {
           text:        m.content,
           offerAmount: m.offerAmount,
           time:        m.sentAt
-            ? new Date(m.sentAt).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' })
+            ? new Date(m.sentAt.includes('T') ? m.sentAt : m.sentAt.replace(' ', 'T') + 'Z').toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' })
             : timestamp(),
         }))
       if (newMsgs.length > 0) {
@@ -396,24 +395,40 @@ function sendMessage() {
   newMessage.value = ''
   addLocalMessage({ id: `local_${Date.now()}`, sender: 'buyer', type: 'text', text, content: text, time: timestamp() })
   persistToBackend(text)
-
-  // Notify seller via SMS the first time buyer sends a message (Negotiate trigger)
-  const listingID = parseInt(route.params.id)
-  if (!hasNotifBeenSent(listingID) && listing.value) {
-    markNotifSent(listingID)
-    const sellerID = listing.value.sellerID ?? listing.value.sellerId ?? 2
-    sendNotification({
-      orderID:      0,
-      disputeID:    null,
-      notification: `[TradeNest] ${mockUser.name} is interested in your listing: '${listing.value.listingName}' (${listing.value.listingPrice}). They have started a negotiation chat with you.`,
-      receiverID:   sellerID,
-    }).catch(() => {})
-  }
+  _notifySellerOnMessage(text)
 }
 
 function sendQuickMessage(text) {
   addLocalMessage({ id: `local_${Date.now()}`, sender: 'buyer', type: 'text', text, content: text, time: timestamp() })
   persistToBackend(text)
+  _notifySellerOnMessage(text)
+}
+
+// Single notification function used by both sendMessage and sendQuickMessage
+function _notifySellerOnMessage(text) {
+  const sellerID  = listing.value?.sellerID ?? listing.value?.sellerId ?? 2
+  const listingID = parseInt(route.params.id)
+  const isFirst   = !hasNotifBeenSent(listingID) && listing.value
+
+  if (isFirst) {
+    // First message: SMS + bell with negotiate message
+    markNotifSent(listingID)
+    sendNotification({
+      orderID:       0,
+      disputeID:     null,
+      notification:  `[TradeNest] ${mockUser.name} is interested in '${listing.value.listingName}' (${listing.value.listingPrice}). They have started a negotiation chat.`,
+      receiverID:    sellerID,
+      receiverPhone: mockSeller.phone,
+    }).catch(() => {})
+  } else {
+    // Subsequent messages: bell only, no SMS
+    sendNotification({
+      orderID:      0,
+      disputeID:    null,
+      notification: `[TradeNest] New message from buyer: "${text.slice(0, 60)}${text.length > 60 ? '...' : ''}"`,
+      receiverID:   sellerID,
+    }).catch(() => {})
+  }
 }
 
 function acceptOffer(amount) {

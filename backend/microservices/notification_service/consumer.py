@@ -43,120 +43,105 @@ def notify(app, db, Notification, receiver_id: int, order_id: int, message: str,
 # ─── Event handlers ───────────────────────────────────────────────────────────
 
 def handle_order_placed(app, db, Notification, payload):
-    """Buyer pays → notify buyer + seller."""
+    """Buyer pays → save notifications only (SMS handled by placeOrder composite service)."""
     order_id  = payload['orderID']
     buyer_id  = payload['buyerID']
     seller_id = payload['sellerID']
     amount    = payload.get('amount', '')
     listing   = payload.get('listingTitle', f"Listing #{payload.get('listingID', '')}")
 
-    notify(app, db, Notification, buyer_id, order_id,
-           f"[TradeNest] Payment confirmed! ${amount} is held in escrow for '{listing}'. "
-           f"Order #{order_id}. We'll notify you when the seller ships.")
-
-    notify(app, db, Notification, seller_id, order_id,
-           f"[TradeNest] New order received! Buyer has paid ${amount} for '{listing}'. "
-           f"Order #{order_id}. Please arrange delivery with the buyer.")
+    # Save to DB only — no SMS (placeOrder already sends SMS to seller)
+    with app.app_context():
+        for receiver_id, message in [
+            (buyer_id,  f"[TradeNest] Payment confirmed! ${amount} is held in escrow for '{listing}'. Order #{order_id}."),
+            (seller_id, f"[TradeNest] New order received! Buyer has paid ${amount} for '{listing}'. Order #{order_id}."),
+        ]:
+            note = Notification(orderID=order_id, disputeID=None, notification=message, receiverID=receiver_id)
+            db.session.add(note)
+        db.session.commit()
+        print(f"[✓] Order placed notifications saved (no duplicate SMS)")
 
 
 def handle_message_sent(app, db, Notification, payload):
-    """New chat message → notify receiver."""
-    order_id   = payload['orderID']
-    sender_id  = payload['senderID']
+    """New chat message → save notification only (no SMS — handled by frontend)."""
+    order_id    = payload['orderID']
+    sender_id   = payload['senderID']
     receiver_id = payload['receiverID']
-    content    = payload.get('content', '')[:80]
+    content     = payload.get('content', '')[:80]
 
-    notify(app, db, Notification, receiver_id, order_id,
-           f"[TradeNest] New message from user {sender_id}: {content}")
+    # Save to DB only — do NOT send SMS here
+    # SMS for messages is triggered directly by the frontend via POST /notification
+    with app.app_context():
+        note = Notification(
+            orderID=order_id,
+            disputeID=None,
+            notification=f"[TradeNest] New message from user {sender_id}: {content}",
+            receiverID=receiver_id,
+        )
+        db.session.add(note)
+        db.session.commit()
+        print(f"[✓] Message notification saved for user {receiver_id} (no SMS)")
 
 
 def handle_dispute_raised(app, db, Notification, payload):
-    """Dispute raised → notify seller to respond within 24 hrs."""
+    """Dispute raised → save notifications only (SMS handled by raiseDispute composite service)."""
     order_id   = payload['orderID']
     dispute_id = payload['disputeID']
     seller_id  = payload['sellerID']
     buyer_id   = payload['buyerID']
     reason     = payload.get('disputeReason', '').replace('_', ' ')
 
-    notify(app, db, Notification, seller_id, order_id,
-           f"[TradeNest] ⚠ Dispute raised on Order #{order_id}. "
-           f"Reason: {reason}. You have 24 hours to respond. "
-           f"Dispute ID: {dispute_id}.",
-           dispute_id=dispute_id)
-
-    notify(app, db, Notification, buyer_id, order_id,
-           f"[TradeNest] Your dispute on Order #{order_id} has been filed. "
-           f"The seller has 24 hours to respond. Dispute ID: {dispute_id}.",
-           dispute_id=dispute_id)
+    # Save to DB only — no SMS (raiseDispute already sends SMS)
+    with app.app_context():
+        for receiver_id, message in [
+            (seller_id, f"[TradeNest] Dispute raised on Order #{order_id}. Reason: {reason}. Dispute #{dispute_id}."),
+            (buyer_id,  f"[TradeNest] Your dispute on Order #{order_id} has been filed. Dispute #{dispute_id}."),
+        ]:
+            note = Notification(orderID=order_id, disputeID=dispute_id, notification=message, receiverID=receiver_id)
+            db.session.add(note)
+        db.session.commit()
+        print(f"[✓] Dispute raised notifications saved (no duplicate SMS)")
 
 
 def handle_receipt_confirmed(app, db, Notification, payload):
-    """Buyer confirms receipt → notify seller funds are released."""
+    """Buyer confirms receipt → notify seller via SMS + SSE."""
     order_id  = payload['orderID']
     seller_id = payload['sellerID']
     buyer_id  = payload['buyerID']
     amount    = payload.get('amount', '')
     listing   = payload.get('listingTitle', f"Order #{order_id}")
 
-    notify(app, db, Notification, seller_id, order_id,
-           f"[TradeNest] 🎉 Payment released! Buyer confirmed receipt of '{listing}'. "
-           f"${amount} has been released to you. Order #{order_id}.")
-
-    notify(app, db, Notification, buyer_id, order_id,
-           f"[TradeNest] Receipt confirmed for '{listing}'. "
-           f"Funds have been released to the seller. Thank you! Order #{order_id}.")
+    # Use HTTP call to notification service so SSE push fires too
+    import requests as req
+    notification_url = os.environ.get('NOTIFICATION_SERVICE_URL', 'http://notification-service:5002')
+    for receiver_id, phone_key, message in [
+        (seller_id, 'SELLER_PHONE', f"[TradeNest] 🎉 Buyer confirmed receipt of '{listing}'. ${amount} released to you. Order #{order_id}."),
+        (buyer_id,  'BUYER_PHONE',  f"[TradeNest] Receipt confirmed for '{listing}'. Funds released to seller. Order #{order_id}."),
+    ]:
+        try:
+            req.post(f"{notification_url}/notification", json={
+                "orderID":       order_id,
+                "notification":  message,
+                "receiverID":    receiver_id,
+                "receiverPhone": os.environ.get(phone_key),
+            }, timeout=10)
+        except Exception as e:
+            print(f"[!] Could not notify user {receiver_id}: {e}")
 
 
 def handle_dispute_resolved(app, db, Notification, payload):
-    """Admin approves dispute → buyer refunded."""
-    order_id   = payload['orderID']
-    dispute_id = payload['disputeID']
-    buyer_id   = payload['buyerID']
-    seller_id  = payload['sellerID']
-    amount     = payload.get('amount', '')
-    listing    = payload.get('listingTitle', f"Order #{order_id}")
-
-    notify(app, db, Notification, buyer_id, order_id,
-           f"[TradeNest] ✅ Dispute #{dispute_id} APPROVED. "
-           f"You will be refunded ${amount} for '{listing}'. Order #{order_id}.",
-           dispute_id=dispute_id)
-
-    notify(app, db, Notification, seller_id, order_id,
-           f"[TradeNest] Dispute #{dispute_id} was decided in the buyer's favour. "
-           f"Funds of ${amount} have been returned to the buyer. Order #{order_id}.",
-           dispute_id=dispute_id)
+    """Admin approves dispute → save DB only (raiseDispute composite sends SMS+SSE)."""
+    pass  # raiseDispute.py resolve_dispute handles notifications
 
 
 def handle_dispute_rejected(app, db, Notification, payload):
-    """Admin rejects dispute → seller gets funds."""
-    order_id   = payload['orderID']
-    dispute_id = payload['disputeID']
-    buyer_id   = payload['buyerID']
-    seller_id  = payload['sellerID']
-    amount     = payload.get('amount', '')
-    listing    = payload.get('listingTitle', f"Order #{order_id}")
-
-    notify(app, db, Notification, seller_id, order_id,
-           f"[TradeNest] ✅ Dispute #{dispute_id} REJECTED in your favour. "
-           f"${amount} has been released to you for '{listing}'. Order #{order_id}.",
-           dispute_id=dispute_id)
-
-    notify(app, db, Notification, buyer_id, order_id,
-           f"[TradeNest] Dispute #{dispute_id} was not upheld. "
-           f"Funds have been released to the seller. Order #{order_id}.",
-           dispute_id=dispute_id)
+    """Admin rejects dispute → save DB only (raiseDispute composite sends SMS+SSE)."""
+    pass  # raiseDispute.py reject_dispute handles notifications
 
 
 def handle_seller_agreed(app, db, Notification, payload):
-    """Seller clicks Agreement Received → notify admin."""
-    order_id   = payload['orderID']
-    dispute_id = payload['disputeID']
-    admin_id   = 99
-
-    notify(app, db, Notification, admin_id, order_id,
-           f"[TradeNest] 🔔 Admin action required. Seller has acknowledged Dispute #{dispute_id} "
-           f"on Order #{order_id}. Please review and make a final decision.",
-           dispute_id=dispute_id)
+    """Seller clicks Agreement Received → save DB only (raiseDispute composite sends SMS+SSE)."""
+    pass  # raiseDispute.py seller_agree handles notifications
 
 
 # ─── Consumer startup ─────────────────────────────────────────────────────────

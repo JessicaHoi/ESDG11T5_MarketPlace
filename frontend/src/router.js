@@ -8,6 +8,7 @@ const routes = [
   { path: '/listings/:id', component: () => import('./views/buyer/ProductDetail.vue') },
   { path: '/orders', component: () => import('./views/buyer/OrderHistory.vue') },
   { path: '/orders/:id', component: () => import('./views/buyer/OrderDetail.vue') },
+  { path: '/inbox', component: () => import('./views/buyer/Inbox.vue') },
   { path: '/messages/:id', component: () => import('./views/buyer/Messages.vue') },
   { path: '/purchase/:id', component: () => import('./views/buyer/Purchase.vue') },
   { path: '/orders/:id/dispute', component: () => import('./views/buyer/RaiseDispute.vue') },

@@ -6,6 +6,7 @@
         <div class="hidden md:flex gap-6">
           <router-link to="/listings" class="text-sm font-semibold hover:text-accent transition-colors">Browse Products</router-link>
           <router-link to="/orders" class="text-sm font-semibold hover:text-accent transition-colors">My Orders</router-link>
+          <router-link to="/inbox" class="text-sm font-semibold hover:text-accent transition-colors">Inbox</router-link>
           <router-link to="/disputes" class="text-sm font-semibold hover:text-accent transition-colors">Disputes</router-link>
         </div>
       </div>

@@ -266,7 +266,9 @@ async function loadThread() {
 function startTimer() {
   if (!dispute.value?.deadlineAt) return
   const update = () => {
-    const diff = new Date(dispute.value.deadlineAt) - new Date()
+    // deadlineAt is stored as UTC — append 'Z' so JS parses it correctly
+    const deadlineStr = dispute.value.deadlineAt.includes('T') ? dispute.value.deadlineAt : dispute.value.deadlineAt.replace(' ', 'T') + 'Z'
+    const diff = new Date(deadlineStr) - new Date()
     if (diff <= 0) { timerExpired.value = true; timerDisplay.value = '00:00:00'; clearInterval(timerHandle) }
     else {
       const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000), s = Math.floor((diff % 60000) / 1000)

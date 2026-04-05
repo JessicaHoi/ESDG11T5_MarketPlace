@@ -123,7 +123,9 @@ function notifIcon(text) {
 
 function formatTime(iso) {
   if (!iso) return ''
-  const d = new Date(iso)
+  // sentAt is stored as UTC in MySQL — append 'Z' so JS parses it as UTC, not local time
+  const utcStr = iso.includes('T') || iso.endsWith('Z') ? iso : iso.replace(' ', 'T') + 'Z'
+  const d = new Date(utcStr)
   const now = new Date()
   const diffMs = now - d
   const diffMin = Math.floor(diffMs / 60000)

@@ -66,7 +66,7 @@
                   <div v-if="msg.type === 'offer'" class="border-2 p-3 mb-1"
                     :class="msg.sender === 'seller' ? 'border-accent bg-accent/5' : 'border-ink/20 bg-white'"
                   >
-                    <p class="section-label text-accent mb-1">{{ msg.sender === 'seller' ? 'Your Counter Offer' : 'Buyer Offer' }}</p>
+                    <p class="section-label text-accent mb-1">{{ msg.sender === 'seller' ? 'Your Final Offer' : 'Buyer Offer' }}</p>
                     <p class="font-display font-bold text-2xl text-ink">${{ msg.offerAmount }}</p>
                     <!-- Accept/counter buttons for seller on buyer offers -->
                     <div v-if="msg.sender === 'buyer' && !agreedPrice && msg.id === lastBuyerOfferId" class="flex gap-2 mt-3">
@@ -128,7 +128,7 @@
                   v-model="counterAmount"
                   type="number"
                   class="flex-1 bg-transparent py-2 font-mono text-ink outline-none"
-                  placeholder="Counter offer amount"
+                  placeholder="Enter final offer amount"
                   min="1"
                 />
               </div>
@@ -157,11 +157,8 @@
 
             <!-- Quick replies -->
             <div class="flex gap-2 mb-3 flex-wrap">
-              <button @click="showDealInput = !showDealInput" class="text-xs border border-sage text-sage px-3 py-1.5 hover:bg-sage hover:text-white transition-colors font-mono">
-                🤝 Confirm Deal
-              </button>
               <button @click="showCounterInput = !showCounterInput" class="text-xs border border-accent text-accent px-3 py-1.5 hover:bg-accent hover:text-white transition-colors font-mono">
-                💰 Counter Offer
+                💰 Final Offer
               </button>
               <button @click="sendQuickMessage('The item is still available!')" class="text-xs border border-ink/20 text-slate px-3 py-1.5 hover:border-ink/50 transition-colors font-mono">
                 Still available
@@ -191,9 +188,11 @@
 
         </div>
 
-        <!-- Right sidebar: order summary -->
+        <!-- Right sidebar: listing summary -->
         <div class="hidden lg:block w-64 border-l border-ink/10 p-5 bg-cream/50">
-          <p class="section-label mb-4">Order</p>
+          <p class="section-label mb-4">Listing</p>
+
+          <!-- Post-order: show order + listing data -->
           <div v-if="order">
             <div class="aspect-square bg-cream overflow-hidden mb-3 flex items-center justify-center">
               <img v-if="listingImage" :src="listingImage" class="w-full h-full object-cover" />
@@ -202,11 +201,11 @@
             <p class="font-display font-semibold text-sm leading-tight mb-2">
               {{ order.order_details || `Listing #${order.listing_id}` }}
             </p>
+            <div class="flex items-baseline gap-2 mb-3">
+              <span class="font-display font-bold text-xl text-accent">${{ agreedPrice || order.agreed_price }}</span>
+              <span v-if="agreedPrice && agreedPrice !== order.agreed_price" class="font-mono text-xs text-muted line-through">${{ order.agreed_price }}</span>
+            </div>
             <div class="space-y-2 text-xs font-mono">
-              <div class="flex justify-between">
-                <span class="text-muted">Agreed price</span>
-                <span class="text-accent font-semibold">${{ order.agreed_price }}</span>
-              </div>
               <div class="flex justify-between">
                 <span class="text-muted">Status</span>
                 <span class="text-ink">{{ order.status }}</span>
@@ -216,7 +215,62 @@
                 <span class="text-ink">#{{ order.buyer_id }}</span>
               </div>
             </div>
+            <div class="mt-4 pt-4 border-t border-ink/10">
+              <p class="section-label mb-2">Negotiation</p>
+              <div class="space-y-1 text-xs font-mono">
+                <div class="flex justify-between">
+                  <span class="text-muted">Listed at</span>
+                  <span>${{ order.agreed_price }}</span>
+                </div>
+                <div v-if="agreedPrice" class="flex justify-between">
+                  <span class="text-muted">Agreed</span>
+                  <span class="text-sage font-semibold">${{ agreedPrice }}</span>
+                </div>
+              </div>
+            </div>
           </div>
+
+          <!-- Pre-order (inbox): show listing data from OutSystems -->
+          <div v-else-if="listing">
+            <div class="aspect-square bg-cream overflow-hidden mb-3 flex items-center justify-center">
+              <img v-if="listing.listingImgUrl" :src="listing.listingImgUrl" class="w-full h-full object-cover" />
+              <span v-else class="text-4xl text-ink/10">🛍</span>
+            </div>
+            <p class="font-display font-semibold text-sm leading-tight mb-2">{{ listing.listingName }}</p>
+            <div class="flex items-baseline gap-2 mb-3">
+              <span class="font-display font-bold text-xl text-accent">${{ agreedPrice || listing.listingPrice }}</span>
+              <span v-if="agreedPrice" class="font-mono text-xs text-muted line-through">${{ listing.listingPrice }}</span>
+            </div>
+            <div class="space-y-2 text-xs font-mono">
+              <div class="flex justify-between">
+                <span class="text-muted">Category</span>
+                <span class="text-ink">{{ listing.listingCategory }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-muted">Stock</span>
+                <span class="text-ink">{{ listing.listingStockQty }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-muted">Status</span>
+                <span class="text-ink">{{ listing.listingStatus || 'ACTIVE' }}</span>
+              </div>
+            </div>
+            <div v-if="agreedPrice" class="mt-4 pt-4 border-t border-ink/10">
+              <p class="section-label mb-2">Negotiation</p>
+              <div class="space-y-1 text-xs font-mono">
+                <div class="flex justify-between">
+                  <span class="text-muted">Listed at</span>
+                  <span>${{ listing.listingPrice }}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-muted">Agreed</span>
+                  <span class="text-sage font-semibold">${{ agreedPrice }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="text-muted font-mono text-xs">Loading listing details...</div>
         </div>
       </div>
     </div>
@@ -228,7 +282,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SellerNavbar from '../../components/SellerNavbar.vue'
 import { mockSeller, mockUser } from '../../data/mockData.js'
-import { getOrdersBySeller, getMessagesByOrder, sendMessage as sendMessageApi, fetchListings } from '../../services/api.js'
+import { getOrdersBySeller, getMessagesByOrder, sendMessage as sendMessageApi, fetchListings, sendNotification, fetchListingById } from '../../services/api.js'
 import { saveDeal, getDeal } from '../../data/negotiationStore.js'
 
 const route   = useRoute()
@@ -240,6 +294,7 @@ const inboxKey = parseInt(route.params.listingID ?? 0) // listingID used as orde
 const convKey  = inboxKey || orderID // the actual key to fetch messages by
 
 const order           = ref(null)
+const listing         = ref(null)  // fallback for pre-order inbox chats
 const listingImages   = ref({})
 const messages        = ref([])
 const loadingMessages = ref(true)
@@ -278,7 +333,7 @@ function toDisplayMsg(raw) {
     type:        raw.messageType || 'text',
     text:        raw.content,
     offerAmount: raw.offerAmount,
-    time:        raw.sentAt ? new Date(raw.sentAt).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' }) : timestamp(),
+    time:        raw.sentAt ? new Date(raw.sentAt.includes('T') ? raw.sentAt : raw.sentAt.replace(' ', 'T') + 'Z').toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' }) : timestamp(),
   }
 }
 
@@ -298,7 +353,21 @@ onMounted(async () => {
     ])
 
     const allOrders = Array.isArray(ordersData) ? ordersData : (ordersData.orders ?? [])
-    order.value = orderID ? allOrders.find(o => o.order_id === orderID) || null : null
+    // Find order by order_id OR by listing_id (for inbox/pre-order chats)
+    order.value = allOrders.find(o =>
+      (orderID && o.order_id === orderID) ||
+      (inboxKey && o.listing_id === inboxKey)
+    ) || null
+
+    // If no order found yet (pre-payment), fetch listing details from OutSystems
+    if (!order.value && inboxKey) {
+      try {
+        const listingRes = await fetchListingById(inboxKey)
+        listing.value = listingRes?.data ?? null
+      } catch (e) {
+        console.warn('[Seller Messages] Could not fetch listing:', e)
+      }
+    }
 
     const listings = listingsData?.data?.listings ?? []
     listings.forEach(l => {
@@ -373,6 +442,13 @@ async function sendMessage() {
       content,
       messageType: 'text',
     })
+    // Bell notification to buyer (no SMS)
+    sendNotification({
+      orderID:    convKey,
+      disputeID:  null,
+      notification: `[TradeNest] New message from seller: "${content.slice(0, 60)}${content.length > 60 ? '...' : ''}"`,
+      receiverID: order.value?.buyer_id ?? 1,
+    }).catch(() => {})
   } catch (err) {
     console.warn('[Seller Messaging] Backend unavailable:', err.message)
   } finally {
