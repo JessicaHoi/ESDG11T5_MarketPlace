@@ -3,7 +3,7 @@
     <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
       <div class="flex items-center gap-8">
         <router-link to="/seller/dashboard" class="font-display font-extrabold text-xl tracking-tight">
-          TradeNest
+          Ouimarché
           <span class="ml-2 text-xs font-mono text-accent border border-accent/30 px-1.5 py-0.5 align-middle">Seller</span>
         </router-link>
         <div class="hidden md:flex gap-6">

@@ -80,13 +80,13 @@
             <!-- Stock -->
             <div class="flex items-center gap-2 mb-6">
               <span
-                v-if="listing.listingStockQty > 1"
+                v-if="effectiveQty > 1"
                 class="text-xs font-mono text-sage bg-sage/10 px-3 py-1"
               >
-                {{ listing.listingStockQty }} available
+                {{ effectiveQty }} available
               </span>
               <span
-                v-else-if="listing.listingStockQty === 1"
+                v-else-if="effectiveQty === 1"
                 class="text-xs font-mono text-amber-600 bg-amber-50 px-3 py-1"
               >
                 Only 1 left
@@ -134,19 +134,19 @@
             <div class="flex gap-3 mt-auto">
               <button
                 @click="negotiate"
-                :disabled="listing.listingStockQty <= 0"
+                :disabled="effectiveQty <= 0"
                 class="btn-secondary flex-1"
-                :class="{ 'opacity-50 cursor-not-allowed': listing.listingStockQty <= 0 }"
+                :class="{ 'opacity-50 cursor-not-allowed': effectiveQty <= 0 }"
               >
                 Negotiate
               </button>
               <button
                 @click="buyNow"
-                :disabled="listing.listingStockQty <= 0"
+                :disabled="effectiveQty <= 0"
                 class="btn-primary flex-1"
-                :class="{ 'opacity-50 cursor-not-allowed': listing.listingStockQty <= 0 }"
+                :class="{ 'opacity-50 cursor-not-allowed': effectiveQty <= 0 }"
               >
-                {{ listing.listingStockQty > 0 ? 'Buy Now' : 'Out of Stock' }}
+                {{ effectiveQty > 0 ? 'Buy Now' : 'Out of Stock' }}
               </button>
             </div>
           </div>
@@ -163,7 +163,7 @@ import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
 import { fetchListingById, getOrders } from '../../services/api.js'
-import { getDeal } from '../../data/negotiationStore.js'
+import { getDeal, getQtyOffset } from '../../data/negotiationStore.js'
 
 const route  = useRoute()
 const router = useRouter()
@@ -173,6 +173,13 @@ const loading  = ref(true)
 const apiError = ref(null)
 const orders   = ref([])
 const negotiatedPrice = ref(null)
+
+// Effective quantity = OutSystems quantity minus local purchase offset
+const effectiveQty = computed(() => {
+  if (!listing.value) return 0
+  const offset = getQtyOffset(listing.value.listingID)
+  return Math.max(0, listing.value.listingStockQty - offset)
+})
 
 // Find an order matching this listing for the current user
 const matchingOrder = computed(() => {

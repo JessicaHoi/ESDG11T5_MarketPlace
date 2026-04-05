@@ -16,7 +16,7 @@
       </div>
       <div class="relative z-10">
         <span class="font-display font-extrabold text-2xl text-paper">
-          Trade<span class="text-accent">Nest</span>
+          Ouimarché
         </span>
       </div>
       <div class="relative z-10">
@@ -37,7 +37,7 @@
     <div class="w-full lg:w-1/2 flex items-center justify-center p-8">
       <div class="w-full max-w-sm">
         <div class="lg:hidden mb-10">
-          <span class="font-display font-extrabold text-2xl">Trade<span class="text-accent">Nest</span></span>
+          <span class="font-display font-extrabold text-2xl">Ouimarché</span>
         </div>
         <p class="section-label mb-2">Seller Portal</p>
         <h2 class="font-display font-bold text-3xl mb-8">Sign in</h2>
@@ -45,7 +45,7 @@
         <form @submit.prevent="handleLogin" class="space-y-4">
           <div>
             <label class="section-label block mb-2">Email</label>
-            <input v-model="form.email" type="email" class="input-field" placeholder="you@tradenest.sg" required />
+            <input v-model="form.email" type="email" class="input-field" placeholder="you@ouimarche.sg" required />
           </div>
           <div>
             <label class="section-label block mb-2">Password</label>
@@ -60,7 +60,7 @@
         <div class="mt-8 pt-6 border-t border-ink/10">
           <p class="text-xs text-muted text-center mb-3 font-mono">Demo credentials</p>
           <button @click="fillDemo" class="w-full border border-ink/20 py-2 text-xs font-mono text-slate hover:border-accent hover:text-accent transition-colors">
-            ryan@tradenest.sg / password123
+            ryan@ouimarche.sg / password123
           </button>
         </div>
 
@@ -87,7 +87,7 @@ const error  = ref('')
 const loading = ref(false)
 
 function fillDemo() {
-  form.value.email    = 'ryan@tradenest.sg'
+  form.value.email    = 'ryan@ouimarche.sg'
   form.value.password = 'password123'
 }
 
@@ -95,7 +95,7 @@ async function handleLogin() {
   error.value   = ''
   loading.value = true
   await new Promise(r => setTimeout(r, 800))
-  if (form.value.email === 'ryan@tradenest.sg' && form.value.password === 'password123') {
+  if (form.value.email === 'ryan@ouimarche.sg' && form.value.password === 'password123') {
     router.push('/seller/dashboard')
   } else {
     error.value = 'Invalid seller credentials.'

@@ -416,7 +416,7 @@ function _notifySellerOnMessage(text) {
     sendNotification({
       orderID:       0,
       disputeID:     null,
-      notification:  `[TradeNest] ${mockUser.name} is interested in '${listing.value.listingName}' (${listing.value.listingPrice}). They have started a negotiation chat.`,
+      notification:  `[Ouimarché] ${mockUser.name} is interested in '${listing.value.listingName}' (${listing.value.listingPrice}). They have started a negotiation chat.`,
       receiverID:    sellerID,
       receiverPhone: mockSeller.phone,
     }).catch(() => {})
@@ -425,7 +425,7 @@ function _notifySellerOnMessage(text) {
     sendNotification({
       orderID:      0,
       disputeID:    null,
-      notification: `[TradeNest] New message from buyer: "${text.slice(0, 60)}${text.length > 60 ? '...' : ''}"`,
+      notification: `[Ouimarché] New message from buyer: "${text.slice(0, 60)}${text.length > 60 ? '...' : ''}"`,
       receiverID:   sellerID,
     }).catch(() => {})
   }

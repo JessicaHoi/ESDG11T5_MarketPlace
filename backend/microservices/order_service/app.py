@@ -38,6 +38,7 @@ app.add_middleware(
 
 class OrderStatus(str, Enum):
     RESERVED  = "RESERVED"
+    DELIVERED = "DELIVERED"
     COMPLETED = "COMPLETED"
     REFUNDED  = "REFUNDED"
     DISPUTED  = "DISPUTED"
@@ -175,6 +176,23 @@ def get_order(order_id: int):
     raise HTTPException(status_code=404, detail="Order not found")
 
 
+@app.put("/orders/{order_id}/deliver", response_model=Order)
+def deliver_order(order_id: int):
+    for index, order in enumerate(orders_db):
+        if order.order_id == order_id:
+            if order.status != OrderStatus.RESERVED:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Only RESERVED orders can be marked as delivered. Current status: {order.status}"
+                )
+            updated_data = order.dict()
+            updated_data["status"] = OrderStatus.DELIVERED
+            updated_order = Order(**updated_data)
+            orders_db[index] = updated_order
+            return updated_order
+    raise HTTPException(status_code=404, detail="Order not found")
+
+
 @app.put("/orders/{order_id}", response_model=Order)
 def update_order(order_id: int, order_update: OrderUpdate):
     for index, order in enumerate(orders_db):
@@ -194,8 +212,8 @@ def update_order(order_id: int, order_update: OrderUpdate):
 def confirm_order(order_id: int):
     for index, order in enumerate(orders_db):
         if order.order_id == order_id:
-            if order.status == OrderStatus.REFUNDED:
-                raise HTTPException(status_code=400, detail="Refunded order cannot be confirmed")
+            if order.status != OrderStatus.DELIVERED:
+                raise HTTPException(status_code=400, detail=f"Only DELIVERED orders can be confirmed. Current status: {order.status}")
             updated_data = order.dict()
             updated_data["status"] = OrderStatus.COMPLETED
             updated_order = Order(**updated_data)

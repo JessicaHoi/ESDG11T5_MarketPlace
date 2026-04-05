@@ -446,7 +446,7 @@ async function sendMessage() {
     sendNotification({
       orderID:    convKey,
       disputeID:  null,
-      notification: `[TradeNest] New message from seller: "${content.slice(0, 60)}${content.length > 60 ? '...' : ''}"`,
+      notification: `[Ouimarché] New message from seller: "${content.slice(0, 60)}${content.length > 60 ? '...' : ''}"`,
       receiverID: order.value?.buyer_id ?? 1,
     }).catch(() => {})
   } catch (err) {

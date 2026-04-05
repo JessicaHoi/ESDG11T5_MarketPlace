@@ -81,15 +81,20 @@
                 💬 Message Buyer
               </button>
 
-              <!-- Mark as shipped / completed — only for RESERVED -->
+              <!-- Mark as Delivered — only for RESERVED -->
               <button
-                v-if="order.status === 'RESERVED' && !delivered"
+                v-if="order.status === 'RESERVED'"
                 @click="handleMarkShipped"
                 :disabled="marking"
                 class="btn-secondary w-full py-3 text-sm"
               >
                 {{ marking ? 'Updating...' : 'Mark as Delivered' }}
               </button>
+
+              <!-- Delivered banner -->
+              <div v-if="order.status === 'DELIVERED'" class="bg-blue-50 border border-blue-200 p-3 text-xs text-blue-700 font-mono">
+                📦 Item marked as delivered. Waiting for buyer to confirm receipt.
+              </div>
 
               <button
                 v-if="order.status === 'DISPUTED'"
@@ -122,7 +127,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SellerNavbar from '../../components/SellerNavbar.vue'
 import { mockSeller, mockUser } from '../../data/mockData.js'
-import { getOrdersBySeller, updateOrder, fetchListings, getDisputes, sendNotification } from '../../services/api.js'
+import { getOrdersBySeller, updateOrder, fetchListings, getDisputes, sendNotification, deliverOrder } from '../../services/api.js'
 
 const route   = useRoute()
 const router  = useRouter()
@@ -168,15 +173,15 @@ async function handleMarkShipped() {
     const amount  = order.value.agreed_price
     const title   = order.value.order_details || `Listing #${order.value.listing_id}`
 
-    const updated = await updateOrder(orderID, { order_details: order.value.order_details + ' [Delivered]' })
+    // Call dedicated deliver endpoint — status: RESERVED → DELIVERED
+    const updated = await deliverOrder(orderID)
     order.value   = updated
-    delivered.value = true
 
-    // Bell notification + SMS to buyer — pass phone explicitly so SMS fires
+    // Bell notification + SMS to buyer
     sendNotification({
       orderID:       orderID,
       disputeID:     null,
-      notification:  `[TradeNest] Your item '${title}' has been marked as delivered for Order #${orderID} (${amount}). Please confirm receipt once you receive it.`,
+      notification:  `[Ouimarché] Your item '${title}' has been marked as delivered for Order #${orderID}. Please confirm receipt once you receive it.`,
       receiverID:    buyerID,
       receiverPhone: mockUser.phone,
     }).catch(() => {})
@@ -206,6 +211,7 @@ async function goToDispute() {
 function badgeClass(status) {
   return {
     RESERVED:  'bg-amber-100 text-amber-700',
+    DELIVERED: 'bg-blue-100 text-blue-700',
     COMPLETED: 'bg-sage/20 text-sage',
     DISPUTED:  'bg-red-100 text-red-700',
     REFUNDED:  'bg-purple-100 text-purple-700',
@@ -215,6 +221,7 @@ function badgeClass(status) {
 function statusText(status) {
   return {
     RESERVED:  'Payment held in escrow. Deliver the item and wait for buyer to confirm receipt.',
+    DELIVERED: 'Item marked as delivered. Waiting for buyer to confirm receipt.',
     COMPLETED: 'Buyer confirmed receipt. Funds have been released to you.',
     DISPUTED:  'Buyer has raised a dispute. Funds are frozen pending admin review.',
     REFUNDED:  'Buyer was refunded. This order is now closed.',

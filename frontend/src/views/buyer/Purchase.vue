@@ -166,7 +166,7 @@
               </div>
 
               <div class="mt-4 pt-4 border-t border-ink/10">
-                <p class="section-label mb-2">Protected by TradeNest</p>
+                <p class="section-label mb-2">Protected by Ouimarché</p>
                 <ul class="space-y-1">
                   <li v-for="item in protections" :key="item" class="text-xs text-slate flex items-center gap-2">
                     <span class="text-sage">✓</span>{{ item }}
@@ -219,6 +219,7 @@ import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
 import { placeOrder, fetchListingById } from '../../services/api.js'
+import { getDeal, clearDeal, decrementQty } from '../../data/negotiationStore.js'
 
 // ─── Reservation timer (10 minutes) ──────────────────────────────────────────
 const RESERVATION_SECONDS = 10 * 60
@@ -346,7 +347,10 @@ async function handlePayment() {
 
     orderResult.value = result
     success.value = true
-    clearInterval(timerHandle) // stop the timer on successful payment
+    clearInterval(timerHandle)
+    // Clear negotiated price and decrement quantity in localStorage
+    clearDeal(listing.value.id)
+    decrementQty(listing.value.id)
   } catch (err) {
     apiError.value = err.message || 'Something went wrong. Please try again.'
   } finally {

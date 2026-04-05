@@ -16,7 +16,7 @@
       </div>
       <div class="relative z-10">
         <span class="font-display font-extrabold text-2xl text-paper">
-          Trade<span class="text-accent">Nest</span>
+          Ouimarché
         </span>
       </div>
       <div class="relative z-10">
@@ -37,7 +37,7 @@
     <div class="w-full lg:w-1/2 flex items-center justify-center p-8">
       <div class="w-full max-w-sm">
         <div class="lg:hidden mb-10">
-          <span class="font-display font-extrabold text-2xl">Trade<span class="text-accent">Nest</span></span>
+          <span class="font-display font-extrabold text-2xl">Ouimarché</span>
         </div>
         <p class="section-label mb-2">Admin Portal</p>
         <h2 class="font-display font-bold text-3xl mb-8">Sign in</h2>
@@ -49,7 +49,7 @@
               v-model="form.email"
               type="email"
               class="input-field"
-              placeholder="admin@tradenest.sg"
+              placeholder="admin@ouimarche.sg"
               required
             />
           </div>
@@ -74,7 +74,7 @@
         <div class="mt-8 pt-6 border-t border-ink/10">
           <p class="text-xs text-muted text-center mb-3 font-mono">Demo credentials</p>
           <button @click="fillDemo" class="w-full border border-ink/20 py-2 text-xs font-mono text-slate hover:border-accent hover:text-accent transition-colors">
-            admin@tradenest.sg / admin123
+            admin@ouimarche.sg / admin123
           </button>
         </div>
 
@@ -98,7 +98,7 @@ const error = ref('')
 const loading = ref(false)
 
 function fillDemo() {
-  form.value.email = 'admin@tradenest.sg'
+  form.value.email = 'admin@ouimarche.sg'
   form.value.password = 'admin123'
 }
 
@@ -106,7 +106,7 @@ async function handleLogin() {
   error.value = ''
   loading.value = true
   await new Promise(r => setTimeout(r, 800))
-  if (form.value.email === 'admin@tradenest.sg' && form.value.password === 'admin123') {
+  if (form.value.email === 'admin@ouimarche.sg' && form.value.password === 'admin123') {
     router.push('/admin/disputes')
   } else {
     error.value = 'Invalid admin credentials.'

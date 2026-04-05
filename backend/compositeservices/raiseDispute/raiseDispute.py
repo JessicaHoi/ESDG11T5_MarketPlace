@@ -200,7 +200,7 @@ def raise_dispute():
     # Notify seller
     send_notification_direct(
         order_id, dispute_id, seller_id,
-        f"[TradeNest] A dispute has been raised against your listing '{listing_title}' "
+        f"[Ouimarché] A dispute has been raised against your listing '{listing_title}' "
         f"(Order #{order_id}, Dispute #{dispute_id}). "
         f"Reason: {dispute_reason.replace('_', ' ')}. "
         f"You have 24 hours to respond."
@@ -208,7 +208,7 @@ def raise_dispute():
     # Notify admin
     send_notification_direct(
         order_id, dispute_id, 99,
-        f"[TradeNest] New dispute raised. Dispute #{dispute_id}, Order #{order_id}. "
+        f"[Ouimarché] New dispute raised. Dispute #{dispute_id}, Order #{order_id}. "
         f"Listing: '{listing_title}', Amount: ${amount}. "
         f"Reason: {dispute_reason.replace('_', ' ')}. Awaiting seller response."
     )
@@ -259,12 +259,12 @@ def seller_respond(dispute_id):
     # Notify buyer
     send_notification_direct(
         order_id, dispute_id, buyer_id,
-        f"[TradeNest] Seller has responded to Dispute #{dispute_id} for Order #{order_id}. Please review their response."
+        f"[Ouimarché] Seller has responded to Dispute #{dispute_id} for Order #{order_id}. Please review their response."
     )
     # Notify admin
     send_notification_direct(
         order_id, dispute_id, 99,
-        f"[TradeNest] Seller has responded to Dispute #{dispute_id} for Order #{order_id}. Awaiting further action."
+        f"[Ouimarché] Seller has responded to Dispute #{dispute_id} for Order #{order_id}. Awaiting further action."
     )
 
     # Publish event
@@ -299,12 +299,12 @@ def seller_agree(dispute_id):
     # Notify admin
     send_notification_direct(
         order_id, dispute_id, 99,
-        f"[TradeNest] Seller has agreed on Dispute #{dispute_id}. Admin decision required for Order #{order_id}. Please review and make a final decision."
+        f"[Ouimarché] Seller has agreed on Dispute #{dispute_id}. Admin decision required for Order #{order_id}. Please review and make a final decision."
     )
     # Notify buyer that seller has acknowledged the dispute
     send_notification_direct(
         order_id, dispute_id, buyer_id,
-        f"[TradeNest] The seller has acknowledged Dispute #{dispute_id} for Order #{order_id}. An admin will now review and make a final decision."
+        f"[Ouimarché] The seller has acknowledged Dispute #{dispute_id} for Order #{order_id}. An admin will now review and make a final decision."
     )
 
     # Publish event
@@ -389,14 +389,14 @@ def resolve_dispute(dispute_id):
     # Notify buyer
     send_notification_direct(
         order_id, dispute_id, buyer_id,
-        f"[TradeNest] ✅ Dispute #{dispute_id} APPROVED. "
+        f"[Ouimarché] ✅ Dispute #{dispute_id} APPROVED. "
         f"You will be refunded ${amount} for '{listing}'. "
         f"Order #{order_id}. Funds will be returned to your original payment method."
     )
     # Notify seller
     send_notification_direct(
         order_id, dispute_id, seller_id,
-        f"[TradeNest] Dispute #{dispute_id} outcome: APPROVED in buyer's favour. "
+        f"[Ouimarché] Dispute #{dispute_id} outcome: APPROVED in buyer's favour. "
         f"Buyer has been refunded ${amount} for '{listing}'. "
         f"Order #{order_id}."
     )
@@ -455,14 +455,14 @@ def reject_dispute(dispute_id):
     # Notify buyer
     send_notification_direct(
         order_id, dispute_id, buyer_id,
-        f"[TradeNest] Dispute #{dispute_id} outcome: REJECTED. "
+        f"[Ouimarché] Dispute #{dispute_id} outcome: REJECTED. "
         f"Funds of ${amount} have been released to the seller for '{listing}'. "
         f"Order #{order_id}."
     )
     # Notify seller
     send_notification_direct(
         order_id, dispute_id, seller_id,
-        f"[TradeNest] ✅ Dispute #{dispute_id} REJECTED in your favour. "
+        f"[Ouimarché] ✅ Dispute #{dispute_id} REJECTED in your favour. "
         f"${amount} has been released to you for '{listing}'. "
         f"Order #{order_id}."
     )

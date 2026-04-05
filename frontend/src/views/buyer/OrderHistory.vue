@@ -82,9 +82,9 @@
 
                   <!-- Actions -->
                   <div class="mt-4 flex gap-2 flex-wrap items-center">
-                    <!-- Confirm receipt (only when RESERVED) -->
+                    <!-- Confirm receipt (only when DELIVERED) -->
                     <button
-                      v-if="order.status === 'RESERVED'"
+                      v-if="order.status === 'DELIVERED'"
                       @click.stop="handleConfirmReceipt(order)"
                       :disabled="confirmingID === order.order_id"
                       class="btn-secondary text-xs px-4 py-2"
@@ -92,9 +92,9 @@
                       {{ confirmingID === order.order_id ? 'Confirming...' : 'Confirm Receipt' }}
                     </button>
 
-                    <!-- Raise dispute (only when RESERVED) -->
+                    <!-- Raise dispute (only when RESERVED or DELIVERED) -->
                     <button
-                      v-if="order.status === 'RESERVED'"
+                      v-if="order.status === 'RESERVED' || order.status === 'DELIVERED'"
                       @click.stop="$router.push(`/orders/${order.order_id}/dispute`)"
                       class="btn-ghost text-xs px-4 py-2 text-red-600 hover:text-red-700"
                     >
@@ -135,7 +135,7 @@
 import { ref, computed, onMounted, onActivated, onUnmounted } from 'vue'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
-import { getOrders, confirmOrder, fetchListings } from '../../services/api.js'
+import { getOrders, confirmOrder, fetchListings, releasePayment } from '../../services/api.js'
 
 const orders      = ref([])
 const loading     = ref(true)
@@ -148,6 +148,7 @@ const listingImages = ref({}) // listingID → listingImgUrl
 const tabs = [
   { label: 'All Orders',  value: 'all' },
   { label: 'In Escrow',   value: 'RESERVED' },
+  { label: 'Delivered',   value: 'DELIVERED' },
   { label: 'Completed',   value: 'COMPLETED' },
   { label: 'Disputes',    value: 'DISPUTED' },
   { label: 'Refunded',    value: 'REFUNDED' },
@@ -218,10 +219,15 @@ async function handleConfirmReceipt(order) {
   confirmingID.value = order.order_id
   confirmError.value[order.order_id] = null
   try {
+    // Step 1: Update order status to COMPLETED
     const updated = await confirmOrder(order.order_id)
-    // Update in-place so UI reflects change immediately
     const idx = orders.value.findIndex(o => o.order_id === order.order_id)
     if (idx !== -1) orders.value[idx] = updated
+
+    // Step 2: Release escrowed funds to seller via Payment Service
+    await releasePayment(order.order_id).catch(err =>
+      console.warn('[Payment] Release failed:', err.message)
+    )
   } catch (err) {
     confirmError.value[order.order_id] = err.message || 'Failed to confirm receipt.'
   } finally {
@@ -231,7 +237,8 @@ async function handleConfirmReceipt(order) {
 
 function statusText(status) {
   const map = {
-    RESERVED:  'Payment held in escrow — awaiting your confirmation of receipt',
+    RESERVED:  'Payment held in escrow — waiting for seller to deliver',
+    DELIVERED: 'Item delivered — please confirm receipt to release funds',
     COMPLETED: 'Funds released to seller — transaction complete',
     DISPUTED:  'Funds frozen — dispute under review',
     REFUNDED:  'Refunded to your original payment method',
@@ -242,6 +249,7 @@ function statusText(status) {
 function paymentBadgeClass(status) {
   return {
     RESERVED:  'bg-amber-100 text-amber-700',
+    DELIVERED: 'bg-blue-100 text-blue-700',
     COMPLETED: 'bg-sage/20 text-sage',
     DISPUTED:  'bg-red-100 text-red-700',
     REFUNDED:  'bg-purple-100 text-purple-700',

@@ -78,6 +78,10 @@ export function confirmOrder(orderID) {
   return put(`/orders/${orderID}/confirm`)
 }
 
+export function deliverOrder(orderID) {
+  return put(`/orders/${orderID}/deliver`)
+}
+
 export function updateOrder(orderID, fields) {
   return put(`/orders/${orderID}`, fields)
 }

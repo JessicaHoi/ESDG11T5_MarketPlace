@@ -96,10 +96,23 @@
                 💬 Message Seller
               </button>
 
-              <!-- RESERVED: Cancel Order -->
+              <!-- RESERVED: waiting for seller to deliver -->
               <template v-if="order.status === 'RESERVED'">
                 <div class="bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700 font-mono leading-relaxed mb-2">
-                  ⏳ Your payment is held in escrow. Confirm receipt once you receive the item, or raise a dispute if something is wrong.
+                  ⏳ Your payment is held in escrow. Waiting for seller to mark the item as delivered.
+                </div>
+                <button
+                  @click="$router.push(`/orders/${order.order_id}/dispute`)"
+                  class="w-full py-3 text-sm font-display font-semibold border border-red-200 text-red-500 hover:bg-red-50 transition-colors"
+                >
+                  Raise Dispute
+                </button>
+              </template>
+
+              <!-- DELIVERED: seller marked delivered, buyer can confirm -->
+              <template v-if="order.status === 'DELIVERED'">
+                <div class="bg-blue-50 border border-blue-200 p-3 text-xs text-blue-700 font-mono leading-relaxed mb-2">
+                  📦 Seller has marked this item as delivered. Please confirm once you receive it.
                 </div>
                 <button
                   @click="handleConfirmReceipt"
@@ -113,12 +126,6 @@
                   class="w-full py-3 text-sm font-display font-semibold border border-red-200 text-red-500 hover:bg-red-50 transition-colors"
                 >
                   Raise Dispute
-                </button>
-                <button
-                  @click="showCancelConfirm = true"
-                  class="w-full py-3 text-sm font-mono text-muted hover:text-ink transition-colors"
-                >
-                  Cancel Order
                 </button>
               </template>
 
@@ -186,7 +193,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
-import { getOrders, confirmOrder, updateOrder, fetchListings, getDisputes, getDisputesByOrder, sendNotification } from '../../services/api.js'
+import { getOrders, confirmOrder, updateOrder, fetchListings, getDisputes, getDisputesByOrder, sendNotification, releasePayment } from '../../services/api.js'
 
 const route  = useRoute()
 const router = useRouter()
@@ -287,19 +294,25 @@ async function handleConfirmReceipt() {
   confirming.value = true
   actionError.value = null
   try {
-    // Capture seller_id and amount BEFORE the API call overwrites order.value
     const sellerID = order.value.seller_id
     const amount   = order.value.agreed_price
 
+    // Step 1: Update order status to COMPLETED
     const updated = await confirmOrder(orderID)
     order.value = updated
 
-    // Notify seller that buyer confirmed receipt and funds are released
+    // Step 2: Release escrowed funds to seller via Payment Service
+    await releasePayment(orderID).catch(err =>
+      console.warn('[Payment] Release failed:', err.message)
+    )
+
+    // Step 3: Notify seller
     sendNotification({
-      orderID:      orderID,
-      disputeID:    null,
-      notification: `[TradeNest] Great news! Buyer has confirmed receipt for Order #${orderID}. Your funds of ${amount} have been released to you.`,
-      receiverID:   sellerID,
+      orderID:       orderID,
+      disputeID:     null,
+      notification:  `[Ouimarché] Great news! Buyer has confirmed receipt for Order #${orderID}. Your funds of ${amount} have been released to you.`,
+      receiverID:    sellerID,
+      receiverPhone: mockUser.phone,
     }).catch(() => {})
 
   } catch (err) {
@@ -326,10 +339,11 @@ async function handleCancel() {
 
 function statusText(status) {
   const map = {
-    RESERVED:  'Payment held in escrow — awaiting your confirmation of receipt.',
-    COMPLETED: 'Funds have been released to the seller. Transaction complete.',
-    DISPUTED:  'Escrow funds are frozen while the dispute is under review.',
-    REFUNDED:  'Refunded to your original payment method.',
+    RESERVED:  'Payment held in escrow — waiting for seller to deliver the item.',
+    DELIVERED: 'Seller has marked item as delivered — please confirm receipt.',
+    COMPLETED: 'Funds released to seller — transaction complete',
+    DISPUTED:  'Funds frozen — dispute under review',
+    REFUNDED:  'Refunded to your original payment method',
   }
   return map[status] || status
 }

@@ -53,8 +53,8 @@ def handle_order_placed(app, db, Notification, payload):
     # Save to DB only — no SMS (placeOrder already sends SMS to seller)
     with app.app_context():
         for receiver_id, message in [
-            (buyer_id,  f"[TradeNest] Payment confirmed! ${amount} is held in escrow for '{listing}'. Order #{order_id}."),
-            (seller_id, f"[TradeNest] New order received! Buyer has paid ${amount} for '{listing}'. Order #{order_id}."),
+            (buyer_id,  f"[Ouimarché] Payment confirmed! ${amount} is held in escrow for '{listing}'. Order #{order_id}."),
+            (seller_id, f"[Ouimarché] New order received! Buyer has paid ${amount} for '{listing}'. Order #{order_id}."),
         ]:
             note = Notification(orderID=order_id, disputeID=None, notification=message, receiverID=receiver_id)
             db.session.add(note)
@@ -75,7 +75,7 @@ def handle_message_sent(app, db, Notification, payload):
         note = Notification(
             orderID=order_id,
             disputeID=None,
-            notification=f"[TradeNest] New message from user {sender_id}: {content}",
+            notification=f"[Ouimarché] New message from user {sender_id}: {content}",
             receiverID=receiver_id,
         )
         db.session.add(note)
@@ -94,8 +94,8 @@ def handle_dispute_raised(app, db, Notification, payload):
     # Save to DB only — no SMS (raiseDispute already sends SMS)
     with app.app_context():
         for receiver_id, message in [
-            (seller_id, f"[TradeNest] Dispute raised on Order #{order_id}. Reason: {reason}. Dispute #{dispute_id}."),
-            (buyer_id,  f"[TradeNest] Your dispute on Order #{order_id} has been filed. Dispute #{dispute_id}."),
+            (seller_id, f"[Ouimarché] Dispute raised on Order #{order_id}. Reason: {reason}. Dispute #{dispute_id}."),
+            (buyer_id,  f"[Ouimarché] Your dispute on Order #{order_id} has been filed. Dispute #{dispute_id}."),
         ]:
             note = Notification(orderID=order_id, disputeID=dispute_id, notification=message, receiverID=receiver_id)
             db.session.add(note)
@@ -115,8 +115,8 @@ def handle_receipt_confirmed(app, db, Notification, payload):
     import requests as req
     notification_url = os.environ.get('NOTIFICATION_SERVICE_URL', 'http://notification-service:5002')
     for receiver_id, phone_key, message in [
-        (seller_id, 'SELLER_PHONE', f"[TradeNest] 🎉 Buyer confirmed receipt of '{listing}'. ${amount} released to you. Order #{order_id}."),
-        (buyer_id,  'BUYER_PHONE',  f"[TradeNest] Receipt confirmed for '{listing}'. Funds released to seller. Order #{order_id}."),
+        (seller_id, 'SELLER_PHONE', f"[Ouimarché] 🎉 Buyer confirmed receipt of '{listing}'. ${amount} released to you. Order #{order_id}."),
+        (buyer_id,  'BUYER_PHONE',  f"[Ouimarché] Receipt confirmed for '{listing}'. Funds released to seller. Order #{order_id}."),
     ]:
         try:
             req.post(f"{notification_url}/notification", json={

@@ -69,11 +69,11 @@
                   </p>
                 </div>
                 
-                <span v-if="item.listingStockQty > 0" class="text-xs font-mono text-sage bg-sage/10 px-2 py-1">
+                <span v-if="effectiveQty(item) > 0" class="text-xs font-mono text-sage bg-sage/10 px-2 py-1">
                   Ready
                 </span>
-                <span v-else class="text-xs font-mono text-amber-600 bg-amber-50 px-2 py-1">
-                  1 Left
+                <span v-else class="text-xs font-mono text-red-600 bg-red-50 px-2 py-1">
+                  Sold Out
                 </span>
               </div>
             </div>
@@ -89,6 +89,12 @@ import { ref, computed, onMounted } from 'vue'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
 import { fetchListings } from '../../services/api.js'
+import { getQtyOffset } from '../../data/negotiationStore.js'
+
+function effectiveQty(item) {
+  const offset = getQtyOffset(item.listingID)
+  return Math.max(0, item.listingStockQty - offset)
+}
 
 const listings = ref([])
 const loading = ref(true)

@@ -111,7 +111,7 @@ def place_order(data: dict):
     delivery_option = data.get('deliveryOption', 'meetup')
     delivery_text = 'Shipping' if delivery_option == 'shipping' else 'Self-collection / Meetup'
     sms_body = (
-        f"[TradeNest] Payment received! "
+        f"[Ouimarché] Payment received! "
         f"Buyer has paid ${amount} for '{listing_title}' (Listing #{listing_id}). "
         f"Delivery method: {delivery_text}. "
         f"Order #{order_id}. Please arrange handover with the buyer."
