@@ -219,7 +219,7 @@ import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
 import { placeOrder, fetchListingById } from '../../services/api.js'
-import { getDeal, clearDeal, decrementQty } from '../../data/negotiationStore.js'
+import { getDeal, clearDeal } from '../../data/negotiationStore.js'
 
 // ─── Reservation timer (10 minutes) ──────────────────────────────────────────
 const RESERVATION_SECONDS = 10 * 60
@@ -350,7 +350,6 @@ async function handlePayment() {
     clearInterval(timerHandle)
     // Clear negotiated price and decrement quantity in localStorage
     clearDeal(listing.value.id)
-    decrementQty(listing.value.id)
   } catch (err) {
     apiError.value = err.message || 'Something went wrong. Please try again.'
   } finally {

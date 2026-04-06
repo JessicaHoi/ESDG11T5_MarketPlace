@@ -227,7 +227,7 @@ import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser, mockSeller } from '../../data/mockData.js'
-import { fetchListingById, sendMessage as sendMessageToBackend, getMessagesByOrder, sendNotification } from '../../services/api.js'
+import { fetchListingById, negotiateSendMessage, negotiateGetMessages } from '../../services/api.js'
 import { getDeal, saveDeal } from '../../data/negotiationStore.js'
 
 const route = useRoute()
@@ -242,7 +242,7 @@ onMounted(async () => {
   try {
     const [listingRes, messagesRes] = await Promise.all([
       fetchListingById(listingID).catch(() => null),
-      getMessagesByOrder(listingID).catch(() => []),
+      negotiateGetMessages(listingID).catch(() => []),
     ])
     listing.value = listingRes?.data ?? null
 
@@ -289,7 +289,7 @@ onMounted(async () => {
   // Poll for new messages every 3 seconds
   pollHandle = setInterval(async () => {
     try {
-      const fresh = await getMessagesByOrder(listingID)
+      const fresh = await negotiateGetMessages(listingID)
       const raw = Array.isArray(fresh) ? fresh : []
       const existingIds = new Set(messages.value.map(m => m.id))
       const newMsgs = raw
@@ -358,19 +358,23 @@ async function scrollToBottom() {
 // Fire-and-forget: persist message to backend, don't block the UI
 async function persistToBackend(content, messageType = 'text', offerAmount = null) {
   const sellerID  = listing.value?.sellerID ?? 2
-  const listingID = parseInt(route.params.id) // use listingID as orderID for conversation isolation
+  const listingID = parseInt(route.params.id)
+  const isFirst   = !hasNotifBeenSent(listingID) && listing.value
+  if (isFirst) markNotifSent(listingID)
   try {
-    await sendMessageToBackend({
-      orderID:     listingID,
-      senderID:    mockUser.id,
-      receiverID:  sellerID,
+    await negotiateSendMessage({
+      orderID:      listingID,
+      senderID:     mockUser.id,
+      receiverID:   sellerID,
       content,
       messageType,
       offerAmount,
+      isFirst,
+      listingName:  listing.value?.listingName ?? '',
+      listingPrice: listing.value?.listingPrice ?? '',
     })
   } catch (err) {
-    // Best-effort — silently ignore if backend is unavailable
-    console.warn('[Messaging] Backend unavailable, message saved locally only:', err.message)
+    console.warn('[Negotiate] Backend unavailable, message saved locally only:', err.message)
   }
 }
 
@@ -395,40 +399,11 @@ function sendMessage() {
   newMessage.value = ''
   addLocalMessage({ id: `local_${Date.now()}`, sender: 'buyer', type: 'text', text, content: text, time: timestamp() })
   persistToBackend(text)
-  _notifySellerOnMessage(text)
 }
 
 function sendQuickMessage(text) {
   addLocalMessage({ id: `local_${Date.now()}`, sender: 'buyer', type: 'text', text, content: text, time: timestamp() })
   persistToBackend(text)
-  _notifySellerOnMessage(text)
-}
-
-// Single notification function used by both sendMessage and sendQuickMessage
-function _notifySellerOnMessage(text) {
-  const sellerID  = listing.value?.sellerID ?? listing.value?.sellerId ?? 2
-  const listingID = parseInt(route.params.id)
-  const isFirst   = !hasNotifBeenSent(listingID) && listing.value
-
-  if (isFirst) {
-    // First message: SMS + bell with negotiate message
-    markNotifSent(listingID)
-    sendNotification({
-      orderID:       0,
-      disputeID:     null,
-      notification:  `[Ouimarché] ${mockUser.name} is interested in '${listing.value.listingName}' (${listing.value.listingPrice}). They have started a negotiation chat.`,
-      receiverID:    sellerID,
-      receiverPhone: mockSeller.phone,
-    }).catch(() => {})
-  } else {
-    // Subsequent messages: bell only, no SMS
-    sendNotification({
-      orderID:      0,
-      disputeID:    null,
-      notification: `[Ouimarché] New message from buyer: "${text.slice(0, 60)}${text.length > 60 ? '...' : ''}"`,
-      receiverID:   sellerID,
-    }).catch(() => {})
-  }
 }
 
 function acceptOffer(amount) {

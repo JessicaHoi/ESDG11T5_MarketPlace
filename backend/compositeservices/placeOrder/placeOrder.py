@@ -102,9 +102,43 @@ def place_order(data: dict):
 
     payment = payment_resp.json()
 
-    # ---------- Step 5: Mark listing as sold (OutSystems) ----------
-    # TODO: Uncomment once OutSystems Listing Service URL is available
-    print(f"[5] SKIPPED — Listing mark-as-sold bypassed. listing_id={listing_id}")
+    # ---------- Step 5: Decrement listing quantity (OutSystems) ----------
+    print(f"[5] Updating listing quantity in OutSystems for listing_id={listing_id}...")
+    try:
+        # Step 5a: GET current listing details
+        get_resp = requests.get(
+            f"{LISTING_URL}{listing_id}/",
+            timeout=10
+        )
+        if get_resp.status_code == 200:
+            listing_data = get_resp.json().get('data', {})
+            current_qty = listing_data.get('listingStockQty', 0)
+            new_qty = max(0, current_qty - 1)
+
+            # Step 5b: PUT full listing object back with decremented quantity
+            put_resp = requests.put(
+                f"{LISTING_URL}",
+                json={
+                    "listingID":          listing_data.get('listingID'),
+                    "listingStatus":      listing_data.get('listingStatus', ''),
+                    "listingName":        listing_data.get('listingName', ''),
+                    "listingCategory":    listing_data.get('listingCategory', ''),
+                    "listingPrice":       listing_data.get('listingPrice', 0),
+                    "listingDescription": listing_data.get('listingDescription', ''),
+                    "listingStockQty":    new_qty,
+                    "listingImgUrl":      listing_data.get('listingImgUrl', ''),
+                    "is_active":          listing_data.get('is_active', True),
+                },
+                timeout=10
+            )
+            if put_resp.status_code == 200:
+                print(f"[5] Listing quantity updated: {current_qty} → {new_qty}")
+            else:
+                print(f"[5] WARNING: Failed to update quantity ({put_resp.status_code}): {put_resp.text} — continuing anyway")
+        else:
+            print(f"[5] WARNING: Could not fetch listing ({get_resp.status_code}) — quantity update skipped")
+    except Exception as e:
+        print(f"[5] WARNING: OutSystems unreachable: {e} — continuing anyway")
 
     # ---------- Step 5b: Notify seller via SMS ----------
     print(f"[5b] Notifying seller via SMS...")

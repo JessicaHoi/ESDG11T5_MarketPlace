@@ -162,7 +162,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
-import { getDispute, getEvidenceByDispute, getMessagesByOrder, sendMessage } from '../../services/api.js'
+import { getDispute, getEvidenceByDispute, sendDisputeMessage, getDisputeMessages, resolveDispute } from '../../services/api.js'
 
 const route = useRoute()
 const disputeID = parseInt(route.params.id)
@@ -207,7 +207,7 @@ onUnmounted(() => { clearInterval(timerHandle); clearInterval(pollHandle) })
 
 async function loadThread() {
   try {
-    const msgs = await getMessagesByOrder(-disputeID)
+    const msgs = await getDisputeMessages(disputeID)
     threadMessages.value = Array.isArray(msgs) ? msgs : []
   } catch { /* silent */ }
 }
@@ -215,9 +215,20 @@ async function loadThread() {
 function startTimer() {
   if (!dispute.value?.deadlineAt) return
   const update = () => {
-    const diff = new Date(dispute.value.deadlineAt) - new Date()
-    if (diff <= 0) { timerExpired.value = true; timerDisplay.value = '00:00:00'; clearInterval(timerHandle) }
-    else {
+    // Append 'Z' if missing so JS parses it as UTC, not local time
+    const deadlineStr = dispute.value.deadlineAt.includes('T')
+      ? dispute.value.deadlineAt.endsWith('Z') ? dispute.value.deadlineAt : dispute.value.deadlineAt + 'Z'
+      : dispute.value.deadlineAt.replace(' ', 'T') + 'Z'
+    const diff = new Date(deadlineStr) - new Date()
+    if (diff <= 0) {
+      timerExpired.value = true
+      timerDisplay.value = '00:00:00'
+      clearInterval(timerHandle)
+      // Auto-resolve if dispute is still OPEN or RESPONSE (seller didn't respond in time)
+      if (dispute.value && ['OPEN', 'RESPONSE'].includes(dispute.value.disputeStatus)) {
+        autoResolve()
+      }
+    } else {
       const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000), s = Math.floor((diff % 60000) / 1000)
       timerDisplay.value = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
     }
@@ -225,12 +236,23 @@ function startTimer() {
   update(); timerHandle = setInterval(update, 1000)
 }
 
+async function autoResolve() {
+  try {
+    console.log(`[Timer] Deadline expired for dispute ${disputeID} — triggering auto-resolve`)
+    const res = await resolveDispute(disputeID, dispute.value.orderID)
+    dispute.value = { ...dispute.value, disputeStatus: 'APPROVED' }
+    console.log('[Timer] Auto-resolve successful:', res)
+  } catch (err) {
+    console.warn('[Timer] Auto-resolve failed:', err.message)
+  }
+}
+
 async function sendThreadMessage() {
   if (!newThreadMsg.value.trim()) return
   const content = newThreadMsg.value
   newThreadMsg.value = ''
   try {
-    await sendMessage({ orderID: -disputeID, senderID: mockUser.id, receiverID: dispute.value?.sellerID || 0, content, messageType: 'text' })
+    await sendDisputeMessage(disputeID, { senderID: mockUser.id, receiverID: dispute.value?.sellerID || 0, content })
     await loadThread()
   } catch (err) { console.warn('Send failed:', err) }
 }

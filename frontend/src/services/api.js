@@ -49,12 +49,20 @@ export function rejectDispute(disputeID, orderID) {
   return post(`/raise-dispute/${disputeID}/reject`, { orderID })
 }
 
-export function submitSellerResponse(disputeID, sellerResponse) {
-  return patch(`/raise-dispute/${disputeID}/respond`, { sellerResponse })
+export function submitSellerResponse(disputeID, sellerResponse, files = []) {
+  return patch(`/raise-dispute/${disputeID}/respond`, { sellerResponse, files })
 }
 
 export function sellerAgreeDispute(disputeID) {
   return patch(`/raise-dispute/${disputeID}/seller-agree`, {})
+}
+
+export function sendDisputeMessage(disputeID, { senderID, receiverID, content }) {
+  return post(`/raise-dispute/${disputeID}/message`, { senderID, receiverID, content })
+}
+
+export function getDisputeMessages(disputeID) {
+  return get(`/raise-dispute/${disputeID}/messages`)
 }
 
 // ─── ATOMIC: Orders ──────────────────────────────────────────────────────────
@@ -105,6 +113,15 @@ export function refundPayment(orderID) {
 
 export function getAllPayments() {
   return get('/payment')
+}
+
+// ─── COMPOSITE: Negotiate ────────────────────────────────────────────────────
+export function negotiateSendMessage({ orderID, senderID, receiverID, content, messageType, offerAmount, isFirst, listingName, listingPrice }) {
+  return post('/negotiate/message', { orderID, senderID, receiverID, content, messageType, offerAmount, isFirst, listingName, listingPrice })
+}
+
+export function negotiateGetMessages(orderID) {
+  return get(`/negotiate/messages?orderID=${orderID}`)
 }
 
 // ─── ATOMIC: Messaging ───────────────────────────────────────────────────────

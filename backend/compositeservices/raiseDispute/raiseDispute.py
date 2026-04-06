@@ -15,6 +15,7 @@ PAYMENT_SERVICE_URL      = os.environ.get("PAYMENT_SERVICE_URL",      "http://pa
 ORDER_SERVICE_URL        = os.environ.get("ORDER_SERVICE_URL",        "http://order-service:8000")
 EVIDENCE_SERVICE_URL     = os.environ.get("EVIDENCE_SERVICE_URL",     "http://evidence-service:5003")
 NOTIFICATION_SERVICE_URL = os.environ.get("NOTIFICATION_SERVICE_URL", "http://notification-service:5002")
+MESSAGING_SERVICE_URL    = os.environ.get("MESSAGING_SERVICE_URL",    "http://messaging-service:5003")
 RABBITMQ_URL             = os.environ.get("RABBITMQ_URL",             "amqp://guest:guest@rabbitmq:5672/")
 
 # Phone numbers from environment
@@ -70,7 +71,9 @@ def send_notification_direct(orderID, disputeID, receiverID, message):
 @app.route("/raise-dispute", methods=["POST"])
 def raise_dispute():
     data = request.get_json()
-    print(f"[raise-dispute] Received: {json.dumps(data)}")
+    # Log received data but truncate file contents to avoid massive base64 dumps
+    log_data = {k: v for k, v in data.items() if k not in ('files', 'fileURL')}
+    print(f"[raise-dispute] Received: {json.dumps(log_data)} (files omitted from log)")
 
     required = ["orderID", "buyerID", "sellerID", "disputeReason",
                 "paymentID", "fileURL", "fileType", "description"]
@@ -255,6 +258,25 @@ def seller_respond(dispute_id):
     dispute_data = update_resp.json().get("data", {})
     order_id = dispute_data.get("orderID", 0)
     buyer_id = dispute_data.get("buyerID", 0)
+
+    # Upload seller evidence files if provided (best-effort)
+    files_data = data.get('files', [])
+    for file_entry in files_data:
+        try:
+            requests.post(
+                f"{EVIDENCE_SERVICE_URL}/evidence",
+                json={
+                    "disputeID":   dispute_id,
+                    "description": f"Seller evidence for dispute #{dispute_id}",
+                    "uploadedBy":  dispute_data.get('sellerID', 0),
+                    "fileURL":     file_entry.get('fileURL', ''),
+                    "fileType":    file_entry.get('fileType', ''),
+                    "fileName":    file_entry.get('fileName', ''),
+                },
+                timeout=10
+            )
+        except Exception as e:
+            print(f"[seller-respond] WARNING: Could not upload evidence: {e}")
 
     # Notify buyer
     send_notification_direct(
@@ -478,6 +500,67 @@ def reject_dispute(dispute_id):
         "message": "Dispute rejected. Payment released to seller.",
         "data": {"release": release_resp.json() if release_resp.status_code == 200 else None},
     }), 200
+
+
+# ── POST /raise-dispute/<id>/message — Send dispute thread message ──────────
+@app.route("/raise-dispute/<int:dispute_id>/message", methods=["POST"])
+def send_dispute_message(dispute_id):
+    data = request.get_json()
+    sender_id   = data.get('senderID')
+    receiver_id = data.get('receiverID')
+    content     = data.get('content', '')
+    if not content or not sender_id or not receiver_id:
+        return jsonify({"code": 400, "message": "senderID, receiverID and content are required"}), 400
+
+    try:
+        msg_resp = requests.post(
+            f"{MESSAGING_SERVICE_URL}/messages",
+            json={
+                "orderID":     -dispute_id,
+                "senderID":    sender_id,
+                "receiverID":  receiver_id,
+                "content":     content,
+                "messageType": "text",
+            },
+            timeout=10
+        )
+        if msg_resp.status_code not in (200, 201):
+            return jsonify({"code": msg_resp.status_code, "message": msg_resp.text}), msg_resp.status_code
+
+        # Notify receiver in-app (no SMS for thread messages)
+        try:
+            requests.post(
+                f"{NOTIFICATION_SERVICE_URL}/notification",
+                json={
+                    "orderID":      0,
+                    "disputeID":    dispute_id,
+                    "notification": f"[Ouimarché] New message in Dispute #{dispute_id}: \"{content[:60]}{'...' if len(content) > 60 else ''}\"",
+                    "receiverID":   receiver_id,
+                },
+                timeout=10
+            )
+        except Exception as e:
+            print(f"[dispute-message] WARNING: Notification failed: {e}")
+
+        return jsonify(msg_resp.json()), 201
+    except Exception as e:
+        return jsonify({"code": 503, "message": str(e)}), 503
+
+
+# ── GET /raise-dispute/<id>/messages — Fetch dispute thread messages ──────────
+@app.route("/raise-dispute/<int:dispute_id>/messages", methods=["GET"])
+def get_dispute_messages(dispute_id):
+    try:
+        resp = requests.get(
+            f"{MESSAGING_SERVICE_URL}/messages",
+            params={"orderID": -dispute_id},
+            timeout=10
+        )
+        if resp.status_code != 200:
+            return jsonify({"code": resp.status_code, "message": resp.text}), resp.status_code
+        return jsonify(resp.json()), 200
+    except Exception as e:
+        return jsonify({"code": 503, "message": str(e)}), 503
 
 
 # ── Health check ─────────────────────────────────────────────────────────────

@@ -262,6 +262,7 @@ services:
       - LISTING_SERVICE_URL=${LISTING_SERVICE_URL}
       - MESSAGING_SERVICE_URL=http://messaging-service:5003
       - NOTIFICATION_SERVICE_URL=http://notification-service:5002
+      - BUYER_PHONE=${BUYER_PHONE}
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
       - SELLER_PHONE=${SELLER_PHONE}
     depends_on:
@@ -293,6 +294,7 @@ services:
       - ORDER_SERVICE_URL=http://order-service:8000
       - EVIDENCE_SERVICE_URL=http://evidence-service:5003
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - MESSAGING_SERVICE_URL=http://messaging-service:5003
       - NOTIFICATION_SERVICE_URL=http://notification-service:5002
       - BUYER_PHONE=${BUYER_PHONE}
       - SELLER_PHONE=${SELLER_PHONE}
@@ -307,6 +309,30 @@ services:
       order-service:
         condition: service_started
       evidence-service:
+        condition: service_started
+    networks:
+      - marketplace_network
+
+  # ─────────────────────────────────────────────
+  # COMPOSITE SERVICE: NEGOTIATE
+  # ─────────────────────────────────────────────
+
+  negotiate-service:
+    build:
+      context: ./backend/compositeservices/negotiate
+      dockerfile: Dockerfile
+    container_name: negotiate_service
+    ports:
+      - "5008:5008"
+    environment:
+      - MESSAGING_SERVICE_URL=http://messaging-service:5003
+      - NOTIFICATION_SERVICE_URL=http://notification-service:5002
+      - BUYER_PHONE=${BUYER_PHONE}
+      - SELLER_PHONE=${SELLER_PHONE}
+    depends_on:
+      messaging-service:
+        condition: service_started
+      notification-service:
         condition: service_started
     networks:
       - marketplace_network
@@ -340,6 +366,7 @@ services:
       - place-order-service
       - raise-dispute-service
       - evidence-service
+      - negotiate-service
     networks:
       - marketplace_network
 

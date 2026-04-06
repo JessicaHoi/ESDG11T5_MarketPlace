@@ -282,7 +282,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SellerNavbar from '../../components/SellerNavbar.vue'
 import { mockSeller, mockUser } from '../../data/mockData.js'
-import { getOrdersBySeller, getMessagesByOrder, sendMessage as sendMessageApi, fetchListings, sendNotification, fetchListingById } from '../../services/api.js'
+import { getOrdersBySeller, negotiateGetMessages, negotiateSendMessage, fetchListings, fetchListingById } from '../../services/api.js'
 import { saveDeal, getDeal } from '../../data/negotiationStore.js'
 
 const route   = useRoute()
@@ -349,11 +349,10 @@ onMounted(async () => {
     const [ordersData, listingsData, messagesData] = await Promise.all([
       getOrdersBySeller(mockSeller.id),
       fetchListings().catch(() => null),
-      getMessagesByOrder(convKey).catch(() => []),
+      negotiateGetMessages(convKey).catch(() => []),
     ])
 
     const allOrders = Array.isArray(ordersData) ? ordersData : (ordersData.orders ?? [])
-    // Find order by order_id OR by listing_id (for inbox/pre-order chats)
     order.value = allOrders.find(o =>
       (orderID && o.order_id === orderID) ||
       (inboxKey && o.listing_id === inboxKey)
@@ -396,11 +395,9 @@ onMounted(async () => {
   }
 
   // Poll for new messages every 3 seconds
-  const fetchFn = () => getMessagesByOrder(convKey)
-
   pollHandle = setInterval(async () => {
     try {
-      const fresh = await fetchFn()
+      const fresh = await negotiateGetMessages(convKey)
       const raw = Array.isArray(fresh) ? fresh : []
       const existingIds = new Set(messages.value.map(m => m.id))
       const newMsgs = raw
@@ -435,22 +432,16 @@ async function sendMessage() {
   addLocalMessage({ id: `local_${Date.now()}`, sender: 'seller', type: 'text', text: content, content, time: timestamp() })
 
   try {
-    await sendMessageApi({
+    await negotiateSendMessage({
       orderID:     convKey,
       senderID:    mockSeller.id,
       receiverID:  order.value?.buyer_id ?? mockUser?.id ?? 1,
       content,
       messageType: 'text',
+      isFirst:     false,
     })
-    // Bell notification to buyer (no SMS)
-    sendNotification({
-      orderID:    convKey,
-      disputeID:  null,
-      notification: `[Ouimarché] New message from seller: "${content.slice(0, 60)}${content.length > 60 ? '...' : ''}"`,
-      receiverID: order.value?.buyer_id ?? 1,
-    }).catch(() => {})
   } catch (err) {
-    console.warn('[Seller Messaging] Backend unavailable:', err.message)
+    console.warn('[Negotiate] Backend unavailable:', err.message)
   } finally {
     sending.value = false
   }
@@ -471,16 +462,17 @@ async function sendCounterOffer() {
   addLocalMessage({ id: `local_${Date.now()}`, sender: 'seller', type: 'offer', text: content, content, offerAmount: amount, time: timestamp() })
 
   try {
-    await sendMessageApi({
+    await negotiateSendMessage({
       orderID:     convKey,
       senderID:    mockSeller.id,
       receiverID:  order.value?.buyer_id ?? mockUser?.id ?? 1,
       content,
       messageType: 'offer',
       offerAmount: amount,
+      isFirst:     false,
     })
   } catch (err) {
-    console.warn('[Seller Messaging] Backend unavailable:', err.message)
+    console.warn('[Negotiate] Backend unavailable:', err.message)
   }
 }
 
@@ -504,12 +496,13 @@ function confirmDeal(amount) {
   const content = `✅ Deal confirmed at ${price}. Proceed to payment.`
   addLocalMessage({ id: `local_${Date.now()}`, sender: 'seller', type: 'text', text: content, content, time: timestamp() })
 
-  sendMessageApi({
+  negotiateSendMessage({
     orderID:     convKey,
     senderID:    mockSeller.id,
     receiverID:  order.value?.buyer_id ?? mockUser?.id ?? 1,
     content,
     messageType: 'text',
-  }).catch(err => console.warn('[Seller Messaging] Backend unavailable:', err.message))
+    isFirst:     false,
+  }).catch(err => console.warn('[Negotiate] Backend unavailable:', err.message))
 }
 </script>

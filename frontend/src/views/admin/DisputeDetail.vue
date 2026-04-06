@@ -274,8 +274,8 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import AdminNavbar from '../../components/AdminNavbar.vue'
 import {
-  getDispute, getEvidenceByDispute, getMessagesByOrder,
-  resolveDispute, rejectDispute, sendNotification,
+  getDispute, getEvidenceByDispute, getDisputeMessages,
+  resolveDispute, rejectDispute,
 } from '../../services/api.js'
 
 const route = useRoute()
@@ -319,9 +319,9 @@ onMounted(async () => {
     dispute.value = disputeRes?.data ?? null
     evidenceFiles.value = evidenceRes?.data ?? []
 
-    // Load conversation thread (negative orderID convention for disputes)
+    // Load conversation thread via RaiseDispute composite
     try {
-      const msgs = await getMessagesByOrder(-disputeID)
+      const msgs = await getDisputeMessages(disputeID)
       threadMessages.value = Array.isArray(msgs) ? msgs : []
     } catch { threadMessages.value = [] }
 
@@ -338,9 +338,11 @@ onUnmounted(() => { if (timerHandle) clearInterval(timerHandle) })
 function startTimer() {
   if (!dispute.value?.deadlineAt) return
   const update = () => {
-    const deadline = new Date(dispute.value.deadlineAt)
-    const now = new Date()
-    const diff = deadline - now
+    // Append 'Z' if missing so JS parses it as UTC, not local time
+    const deadlineStr = dispute.value.deadlineAt.includes('T')
+      ? dispute.value.deadlineAt.endsWith('Z') ? dispute.value.deadlineAt : dispute.value.deadlineAt + 'Z'
+      : dispute.value.deadlineAt.replace(' ', 'T') + 'Z'
+    const diff = new Date(deadlineStr) - new Date()
     if (diff <= 0) {
       timerExpired.value = true
       timerDisplay.value = '00:00:00'

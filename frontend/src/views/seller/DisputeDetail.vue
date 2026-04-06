@@ -205,8 +205,8 @@ import { useRoute } from 'vue-router'
 import SellerNavbar from '../../components/SellerNavbar.vue'
 import { mockSeller } from '../../data/mockData.js'
 import {
-  getDispute, getEvidenceByDispute, getMessagesByOrder, sendMessage,
-  submitSellerResponse, sellerAgreeDispute, uploadEvidence
+  getDispute, getEvidenceByDispute, sendDisputeMessage, getDisputeMessages,
+  submitSellerResponse, sellerAgreeDispute
 } from '../../services/api.js'
 
 const route = useRoute()
@@ -258,7 +258,7 @@ onUnmounted(() => { clearInterval(timerHandle); clearInterval(pollHandle) })
 
 async function loadThread() {
   try {
-    const msgs = await getMessagesByOrder(-disputeID)
+    const msgs = await getDisputeMessages(disputeID)
     threadMessages.value = Array.isArray(msgs) ? msgs : []
   } catch { /* silent */ }
 }
@@ -267,7 +267,9 @@ function startTimer() {
   if (!dispute.value?.deadlineAt) return
   const update = () => {
     // deadlineAt is stored as UTC — append 'Z' so JS parses it correctly
-    const deadlineStr = dispute.value.deadlineAt.includes('T') ? dispute.value.deadlineAt : dispute.value.deadlineAt.replace(' ', 'T') + 'Z'
+    const deadlineStr = dispute.value.deadlineAt.includes('T')
+      ? dispute.value.deadlineAt.endsWith('Z') ? dispute.value.deadlineAt : dispute.value.deadlineAt + 'Z'
+      : dispute.value.deadlineAt.replace(' ', 'T') + 'Z'
     const diff = new Date(deadlineStr) - new Date()
     if (diff <= 0) { timerExpired.value = true; timerDisplay.value = '00:00:00'; clearInterval(timerHandle) }
     else {
@@ -318,27 +320,23 @@ async function submitResponse() {
   if (!responseText.value.trim()) return
   submittingResponse.value = true
   try {
-    const res = await submitSellerResponse(disputeID, responseText.value)
-    dispute.value = res?.data ?? { ...dispute.value, sellerResponse: responseText.value, disputeStatus: 'RESPONSE' }
-
-    // Upload files if any
+    // Convert files to base64
+    const filesPayload = []
     for (const file of evidenceStore.value) {
       const base64 = await fileToBase64(file)
-      await uploadEvidence({
-        disputeID: disputeID,
-        uploadedBy: mockSeller.id,
-        fileURL: base64,
-        fileType: file.type,
-        fileName: file.name
-      }).catch(console.warn)
+      filesPayload.push({ fileURL: base64, fileType: file.type, fileName: file.name })
     }
+
+    // Send response + evidence through RaiseDispute composite
+    const res = await submitSellerResponse(disputeID, responseText.value, filesPayload)
+    dispute.value = res?.data ?? { ...dispute.value, sellerResponse: responseText.value, disputeStatus: 'RESPONSE' }
 
     // Refresh evidence
     const eRes = await getEvidenceByDispute(disputeID).catch(() => ({ data: [] }))
     evidenceFiles.value = eRes?.data ?? []
 
-    // Also send as a thread message
-    await sendMessage({ orderID: -disputeID, senderID: mockSeller.id, receiverID: dispute.value.buyerID, content: responseText.value, messageType: 'text' }).catch(() => {})
+    // Send as thread message through composite
+    await sendDisputeMessage(disputeID, { senderID: mockSeller.id, receiverID: dispute.value.buyerID, content: responseText.value }).catch(() => {})
     await loadThread()
   } catch (err) { alert('Failed: ' + err.message) }
   finally { submittingResponse.value = false }
@@ -358,7 +356,7 @@ async function sendThreadMessage() {
   const content = newThreadMsg.value
   newThreadMsg.value = ''
   try {
-    await sendMessage({ orderID: -disputeID, senderID: mockSeller.id, receiverID: dispute.value?.buyerID || 0, content, messageType: 'text' })
+    await sendDisputeMessage(disputeID, { senderID: mockSeller.id, receiverID: dispute.value?.buyerID || 0, content })
     await loadThread()
   } catch (err) { console.warn('Send failed:', err) }
 }
