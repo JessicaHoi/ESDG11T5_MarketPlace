@@ -162,7 +162,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
-import { fetchListingById, getOrders, negotiateGetDeal } from '../../services/api.js'
+import { fetchListingById, getOrders } from '../../services/api.js'
 import { getDeal, getQtyOffset } from '../../data/negotiationStore.js'
 
 const route  = useRoute()
@@ -212,16 +212,10 @@ onMounted(async () => {
     const data = listingRes?.data ?? null
     if (data && data.listingName) {
       listing.value = data
-      // Prefer backend deal; fall back to localStorage for offline compatibility.
-      const backendDeal = await negotiateGetDeal(data.listingID).catch(() => null)
-      const backendPrice = backendDeal?.deal?.price
-      if (backendPrice && backendPrice !== data.listingPrice) {
-        negotiatedPrice.value = backendPrice
-      } else {
-        const localDeal = getDeal(data.listingID)
-        if (localDeal && localDeal.price && localDeal.price !== data.listingPrice) {
-          negotiatedPrice.value = localDeal.price
-        }
+      // Check negotiation store for a previously agreed price
+      const deal = getDeal(data.listingID)
+      if (deal && deal.price && deal.price !== data.listingPrice) {
+        negotiatedPrice.value = deal.price
       }
     } else {
       apiError.value = 'Listing not found.'

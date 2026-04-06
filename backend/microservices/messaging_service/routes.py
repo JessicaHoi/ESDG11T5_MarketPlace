@@ -61,31 +61,3 @@ def get_messages():
 
     messages = query.order_by(Message.sentAt.asc()).all()
     return jsonify([m.to_dict() for m in messages]), 200
-
-
-# GET /messages/deal?orderID=X — Get latest agreed deal amount for a conversation
-@bp.route('/messages/deal', methods=['GET'])
-def get_latest_deal():
-    order_id = request.args.get('orderID', type=int)
-    if order_id is None:
-        return jsonify({"error": "Missing required query param: orderID"}), 400
-
-    agreement = (
-        Message.query
-        .filter_by(orderID=order_id, messageType='agreement')
-        .order_by(Message.sentAt.desc(), Message.messageID.desc())
-        .first()
-    )
-
-    if not agreement:
-        return jsonify({"orderID": order_id, "deal": None}), 200
-
-    return jsonify({
-        "orderID": order_id,
-        "deal": {
-            "price": float(agreement.offerAmount) if agreement.offerAmount is not None else None,
-            "messageID": agreement.messageID,
-            "sentAt": str(agreement.sentAt),
-            "senderID": agreement.senderID,
-        }
-    }), 200

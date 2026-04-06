@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from negotiate import send_message, get_messages, get_deal
+from negotiate import send_message, get_messages
 
 load_dotenv()
 
@@ -27,15 +27,6 @@ def handle_get_messages():
     if order_id is None:
         return jsonify({"error": "Missing required query param: orderID"}), 400
     result, status_code = get_messages(order_id)
-    return jsonify(result), status_code
-
-
-@app.route('/negotiate/deal', methods=['GET'])
-def handle_get_deal():
-    order_id = request.args.get('orderID', type=int)
-    if order_id is None:
-        return jsonify({"error": "Missing required query param: orderID"}), 400
-    result, status_code = get_deal(order_id)
     return jsonify(result), status_code
 
 

@@ -105,18 +105,3 @@ def get_messages(order_id: int):
         return resp.json(), 200
     except Exception as e:
         return {"error": f"Messaging service unreachable: {e}"}, 503
-
-
-def get_deal(order_id: int):
-    print(f"[GET] Fetching latest agreed deal for orderID={order_id}...")
-    try:
-        resp = requests.get(
-            f"{MESSAGING_URL}/messages/deal",
-            params={"orderID": order_id},
-            timeout=10
-        )
-        if resp.status_code != 200:
-            return {"error": "Failed to fetch latest deal", "details": safe_json(resp)}, resp.status_code
-        return resp.json(), 200
-    except Exception as e:
-        return {"error": f"Messaging service unreachable: {e}"}, 503

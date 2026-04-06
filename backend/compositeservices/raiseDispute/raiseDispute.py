@@ -1,206 +1,573 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
-from typing import Optional, List
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import requests
+import pika
+import json
+import os
+import time
 from datetime import datetime, timedelta
-from enum import Enum
 
-app = FastAPI(title="Dispute Service")
+app = Flask(__name__)
+CORS(app)
 
+DISPUTE_SERVICE_URL      = os.environ.get("DISPUTE_SERVICE_URL",      "http://dispute-service:5000")
+PAYMENT_SERVICE_URL      = os.environ.get("PAYMENT_SERVICE_URL",      "http://payment-service:5000")
+ORDER_SERVICE_URL        = os.environ.get("ORDER_SERVICE_URL",        "http://order-service:8000")
+EVIDENCE_SERVICE_URL     = os.environ.get("EVIDENCE_SERVICE_URL",     "http://evidence-service:5003")
+NOTIFICATION_SERVICE_URL = os.environ.get("NOTIFICATION_SERVICE_URL", "http://notification-service:5002")
+MESSAGING_SERVICE_URL    = os.environ.get("MESSAGING_SERVICE_URL",    "http://messaging-service:5003")
+RABBITMQ_URL             = os.environ.get("RABBITMQ_URL",             "amqp://guest:guest@rabbitmq:5672/")
 
-class DisputeStatus(str, Enum):
-    OPEN = "OPEN"
-    NEGOTIATING = "NEGOTIATING"
-    RESOLVED_BUYER = "RESOLVED_BUYER"
-    RESOLVED_SELLER = "RESOLVED_SELLER"
-    AUTO_REFUNDED = "AUTO_REFUNDED"
-    CLOSED = "CLOSED"
+# Phone numbers from environment
+BUYER_PHONE  = os.environ.get("BUYER_PHONE")
+SELLER_PHONE = os.environ.get("SELLER_PHONE")
+ADMIN_PHONE  = os.environ.get("ADMIN_PHONE")
 
-
-class SenderRole(str, Enum):
-    BUYER = "BUYER"
-    SELLER = "SELLER"
-    SYSTEM = "SYSTEM"
-
-
-class DisputeCreate(BaseModel):
-    order_id: int
-    buyer_id: int
-    seller_id: int
-    reason: str = Field(..., min_length=3)
-    evidence: Optional[str] = None
+PHONE_MAP = {
+    1:  BUYER_PHONE,
+    2:  SELLER_PHONE,
+    99: ADMIN_PHONE,
+}
 
 
-class NegotiationMessageCreate(BaseModel):
-    sender_role: SenderRole
-    sender_id: int
-    message: str = Field(..., min_length=1)
+def publish_event(exchange: str, routing_key: str, payload: dict):
+    try:
+        params = pika.URLParameters(RABBITMQ_URL)
+        conn   = pika.BlockingConnection(params)
+        ch     = conn.channel()
+        ch.exchange_declare(exchange=exchange, exchange_type="topic", durable=True)
+        ch.basic_publish(
+            exchange=exchange,
+            routing_key=routing_key,
+            body=json.dumps(payload),
+            properties=pika.BasicProperties(delivery_mode=2),
+        )
+        conn.close()
+        print(f"[AMQP] Published {routing_key} → {exchange}")
+    except Exception as exc:
+        print(f"[AMQP] WARNING – could not publish event: {exc}")
 
 
-class DisputeResolve(BaseModel):
-    outcome: DisputeStatus
+def send_notification_direct(orderID, disputeID, receiverID, message):
+    """Send notification to notification service — triggers SMS automatically."""
+    try:
+        requests.post(
+            f"{NOTIFICATION_SERVICE_URL}/notification",
+            json={
+                "orderID":       orderID,
+                "disputeID":     disputeID,
+                "notification":  message,
+                "receiverID":    receiverID,
+                "receiverPhone": PHONE_MAP.get(receiverID),  # pass phone so SMS fires
+            },
+            timeout=10,
+        )
+        print(f"[notify] Sent to user {receiverID}: {message[:60]}...")
+    except Exception as e:
+        print(f"[notify] WARNING: Could not send notification: {e}")
 
 
-class NegotiationMessage(BaseModel):
-    message_id: int
-    dispute_id: int
-    sender_role: SenderRole
-    sender_id: int
-    message: str
-    created_at: datetime
+# ── POST /raise-dispute — Create a new dispute ──────────────────────────────
+@app.route("/raise-dispute", methods=["POST"])
+def raise_dispute():
+    data = request.get_json()
+    # Log received data but truncate file contents to avoid massive base64 dumps
+    log_data = {k: v for k, v in data.items() if k not in ('files', 'fileURL')}
+    print(f"[raise-dispute] Received: {json.dumps(log_data)} (files omitted from log)")
 
+    required = ["orderID", "buyerID", "sellerID", "disputeReason",
+                "paymentID", "fileURL", "fileType", "description"]
+    missing  = [f for f in required if f not in data]
+    if missing:
+        return jsonify({"code": 400, "message": f"Missing fields: {missing}"}), 400
 
-class Dispute(BaseModel):
-    dispute_id: int
-    order_id: int
-    buyer_id: int
-    seller_id: int
-    reason: str
-    evidence: Optional[str] = None
-    status: DisputeStatus
-    created_at: datetime
-    seller_response_deadline: datetime
-    resolved_at: Optional[datetime] = None
+    order_id       = data["orderID"]
+    buyer_id       = data["buyerID"]
+    seller_id      = data["sellerID"]
+    payment_id     = data["paymentID"]
+    dispute_reason = data["disputeReason"]
 
+    # Calculate 24-hour deadline
+    now = datetime.utcnow()
+    deadline = now + timedelta(hours=24)
 
-disputes_db: List[Dispute] = []
-messages_db: List[NegotiationMessage] = []
-next_dispute_id = 1
-next_message_id = 1
+    # ---------- Step 1: Create dispute ----------
+    dispute_id = int(time.time())
+    dispute_resp = requests.post(
+        f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}",
+        json={
+            "disputeReason": dispute_reason,
+            "disputeStatus": "OPEN",
+            "description":   data["description"],
+            "orderID":       order_id,
+            "buyerID":       buyer_id,
+            "sellerID":      seller_id,
+            "amount":        data.get("amount", 0),
+            "listingTitle":  data.get("listingTitle", ""),
+            "createdAt":     now.isoformat(),
+            "deadlineAt":    deadline.isoformat(),
+        },
+        timeout=10,
+    )
+    if dispute_resp.status_code not in (200, 201):
+        print(f"[raise-dispute] Step 1 failed: {dispute_resp.status_code} {dispute_resp.text}")
+        return jsonify({
+            "code":    dispute_resp.status_code,
+            "step":    "create_dispute",
+            "message": dispute_resp.text,
+        }), dispute_resp.status_code
 
+    # ---------- Step 2: Freeze payment (best-effort) ----------
+    freeze_status = "NOT_FROZEN"
+    if payment_id and payment_id != 0:
+        freeze_resp = requests.put(
+            f"{PAYMENT_SERVICE_URL}/payment/{payment_id}/freeze",
+            timeout=10,
+        )
+        if freeze_resp.status_code == 200:
+            freeze_status = freeze_resp.json().get("data", {}).get("holdStatus", "FROZEN")
+            print(f"[raise-dispute] Step 2: Payment {payment_id} frozen")
+        else:
+            print(f"[raise-dispute] Step 2 WARNING: Could not freeze payment {payment_id}: {freeze_resp.text}")
+    else:
+        print(f"[raise-dispute] Step 2 SKIPPED: No valid paymentID provided ({payment_id})")
 
-@app.get("/")
-def root():
-    return {"message": "Dispute Service is running"}
+    # ---------- Step 3: Fetch order details ----------
+    order_details = {}
+    try:
+        order_resp = requests.get(f"{ORDER_SERVICE_URL}/orders/{order_id}", timeout=10)
+        if order_resp.status_code == 200:
+            order_details = order_resp.json()
+    except Exception as e:
+        print(f"[raise-dispute] Step 3 WARNING: Could not fetch order: {e}")
 
+    # ---------- Step 4: Upload evidence ----------
+    evidence_id = None
+    # Support multiple evidence files
+    files_data = data.get("files", [])
+    if not files_data:
+        # Backwards compat: single file from fileURL/fileType
+        files_data = [{
+            "fileURL":  data["fileURL"],
+            "fileType": data["fileType"],
+            "fileName": data.get("fileName", "evidence-file"),
+        }]
 
-@app.post("/disputes", response_model=Dispute)
-def raise_dispute(dispute_data: DisputeCreate):
-    global next_dispute_id
+    for file_entry in files_data:
+        evidence_resp = requests.post(
+            f"{EVIDENCE_SERVICE_URL}/evidence",
+            json={
+                "disputeID":   dispute_id,
+                "description": data["description"],
+                "uploadedBy":  buyer_id,
+                "fileURL":     file_entry.get("fileURL", ""),
+                "fileType":    file_entry.get("fileType", ""),
+                "fileName":    file_entry.get("fileName", ""),
+            },
+            timeout=10,
+        )
+        if evidence_resp.status_code not in (200, 201):
+            print(f"[raise-dispute] Step 4 WARNING: Could not upload evidence: {evidence_resp.text}")
+        else:
+            if evidence_id is None:
+                evidence_id = evidence_resp.json().get("data", {}).get("evidenceID")
 
-    new_dispute = Dispute(
-        dispute_id=next_dispute_id,
-        order_id=dispute_data.order_id,
-        buyer_id=dispute_data.buyer_id,
-        seller_id=dispute_data.seller_id,
-        reason=dispute_data.reason,
-        evidence=dispute_data.evidence,
-        status=DisputeStatus.OPEN,
-        created_at=datetime.utcnow(),
-        seller_response_deadline=datetime.utcnow() + timedelta(hours=48),
-        resolved_at=None
+    # ---------- Step 5: Publish AMQP event ----------
+    publish_event(
+        exchange    = "dispute_events",
+        routing_key = "dispute.raised",
+        payload     = {
+            "orderID":       order_id,
+            "disputeID":     dispute_id,
+            "sellerID":      seller_id,
+            "buyerID":       buyer_id,
+            "disputeReason": dispute_reason,
+        },
     )
 
-    disputes_db.append(new_dispute)
-    next_dispute_id += 1
-    return new_dispute
+    # ---------- Step 6: Update order status to DISPUTED ----------
+    try:
+        requests.put(
+            f"{ORDER_SERVICE_URL}/orders/{order_id}",
+            json={"status": "DISPUTED"},
+            timeout=10,
+        )
+        print(f"[raise-dispute] Step 6: Order {order_id} marked DISPUTED")
+    except Exception as e:
+        print(f"[raise-dispute] Step 6 WARNING: Could not update order status: {e}")
 
+    # ---------- Step 7: Notify seller and admin ----------
+    listing_title = data.get('listingTitle', f'Order #{order_id}')
+    amount        = data.get('amount', 0)
 
-@app.get("/disputes", response_model=List[Dispute])
-def get_all_disputes():
-    return disputes_db
-
-
-@app.get("/disputes/{dispute_id}", response_model=Dispute)
-def get_dispute(dispute_id: int):
-    for dispute in disputes_db:
-        if dispute.dispute_id == dispute_id:
-            return dispute
-    raise HTTPException(status_code=404, detail="Dispute not found")
-
-
-@app.post("/disputes/{dispute_id}/messages", response_model=NegotiationMessage)
-def add_negotiation_message(dispute_id: int, msg_data: NegotiationMessageCreate):
-    global next_message_id
-
-    dispute_index = None
-    for index, dispute in enumerate(disputes_db):
-        if dispute.dispute_id == dispute_id:
-            dispute_index = index
-            break
-
-    if dispute_index is None:
-        raise HTTPException(status_code=404, detail="Dispute not found")
-
-    dispute = disputes_db[dispute_index]
-
-    if dispute.status in {
-        DisputeStatus.RESOLVED_BUYER,
-        DisputeStatus.RESOLVED_SELLER,
-        DisputeStatus.AUTO_REFUNDED,
-        DisputeStatus.CLOSED,
-    }:
-        raise HTTPException(status_code=400, detail="Dispute is already closed")
-
-    new_message = NegotiationMessage(
-        message_id=next_message_id,
-        dispute_id=dispute_id,
-        sender_role=msg_data.sender_role,
-        sender_id=msg_data.sender_id,
-        message=msg_data.message,
-        created_at=datetime.utcnow()
+    # Notify seller
+    send_notification_direct(
+        order_id, dispute_id, seller_id,
+        f"[Ouimarché] A dispute has been raised against your listing '{listing_title}' "
+        f"(Order #{order_id}, Dispute #{dispute_id}). "
+        f"Reason: {dispute_reason.replace('_', ' ')}. "
+        f"You have 24 hours to respond."
+    )
+    # Notify admin
+    send_notification_direct(
+        order_id, dispute_id, 99,
+        f"[Ouimarché] New dispute raised. Dispute #{dispute_id}, Order #{order_id}. "
+        f"Listing: '{listing_title}', Amount: ${amount}. "
+        f"Reason: {dispute_reason.replace('_', ' ')}. Awaiting seller response."
     )
 
-    messages_db.append(new_message)
-    next_message_id += 1
-
-    updated_dispute = dispute.model_copy(update={"status": DisputeStatus.NEGOTIATING})
-    disputes_db[dispute_index] = updated_dispute
-
-    return new_message
-
-
-@app.get("/disputes/{dispute_id}/messages", response_model=List[NegotiationMessage])
-def get_dispute_messages(dispute_id: int):
-    dispute_exists = any(d.dispute_id == dispute_id for d in disputes_db)
-    if not dispute_exists:
-        raise HTTPException(status_code=404, detail="Dispute not found")
-
-    return [msg for msg in messages_db if msg.dispute_id == dispute_id]
+    return jsonify({
+        "code":    201,
+        "message": "Dispute raised successfully. Seller notified.",
+        "data": {
+            "disputeID":     dispute_id,
+            "evidenceID":    evidence_id,
+            "paymentStatus": freeze_status,
+            "orderDetails":  order_details,
+            "deadlineAt":    deadline.isoformat(),
+        },
+    }), 201
 
 
-@app.put("/disputes/{dispute_id}/resolve", response_model=Dispute)
-def resolve_dispute(dispute_id: int, resolution: DisputeResolve):
-    for index, dispute in enumerate(disputes_db):
-        if dispute.dispute_id == dispute_id:
-            if resolution.outcome not in {
-                DisputeStatus.RESOLVED_BUYER,
-                DisputeStatus.RESOLVED_SELLER,
-                DisputeStatus.CLOSED,
-            }:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Invalid resolution outcome"
-                )
+# ── PATCH /raise-dispute/<id>/respond — Seller submits response ──────────────
+@app.route("/raise-dispute/<int:dispute_id>/respond", methods=["PATCH"])
+def seller_respond(dispute_id):
+    data = request.get_json()
+    response_text = data.get("sellerResponse", "")
+    if not response_text:
+        return jsonify({"code": 400, "message": "sellerResponse is required"}), 400
 
-            updated_dispute = dispute.model_copy(
-                update={
-                    "status": resolution.outcome,
-                    "resolved_at": datetime.utcnow()
-                }
+    # Reset 24-hour deadline from now
+    new_deadline = datetime.utcnow() + timedelta(hours=24)
+
+    # Update dispute with seller response
+    update_resp = requests.patch(
+        f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}",
+        json={
+            "sellerResponse": response_text,
+            "disputeStatus":  "RESPONSE",
+            "deadlineAt":     new_deadline.isoformat(),
+        },
+        timeout=10,
+    )
+    if update_resp.status_code != 200:
+        return jsonify({"code": update_resp.status_code, "step": "update_dispute",
+                        "message": update_resp.text}), update_resp.status_code
+
+    # Fetch dispute to get buyer/order info
+    dispute_data = update_resp.json().get("data", {})
+    order_id = dispute_data.get("orderID", 0)
+    buyer_id = dispute_data.get("buyerID", 0)
+
+    # Upload seller evidence files if provided (best-effort)
+    files_data = data.get('files', [])
+    for file_entry in files_data:
+        try:
+            requests.post(
+                f"{EVIDENCE_SERVICE_URL}/evidence",
+                json={
+                    "disputeID":   dispute_id,
+                    "description": f"Seller evidence for dispute #{dispute_id}",
+                    "uploadedBy":  dispute_data.get('sellerID', 0),
+                    "fileURL":     file_entry.get('fileURL', ''),
+                    "fileType":    file_entry.get('fileType', ''),
+                    "fileName":    file_entry.get('fileName', ''),
+                },
+                timeout=10
             )
-            disputes_db[index] = updated_dispute
-            return updated_dispute
+        except Exception as e:
+            print(f"[seller-respond] WARNING: Could not upload evidence: {e}")
 
-    raise HTTPException(status_code=404, detail="Dispute not found")
+    # Notify buyer
+    send_notification_direct(
+        order_id, dispute_id, buyer_id,
+        f"[Ouimarché] Seller has responded to Dispute #{dispute_id} for Order #{order_id}. Please review their response."
+    )
+    # Notify admin
+    send_notification_direct(
+        order_id, dispute_id, 99,
+        f"[Ouimarché] Seller has responded to Dispute #{dispute_id} for Order #{order_id}. Awaiting further action."
+    )
+
+    # Publish event
+    publish_event("dispute_events", "dispute.seller_responded", {
+        "disputeID": dispute_id, "orderID": order_id,
+    })
+
+    return jsonify({
+        "code": 200,
+        "message": "Seller response recorded. Timer reset.",
+        "data": dispute_data,
+    }), 200
 
 
-@app.put("/disputes/{dispute_id}/auto-refund", response_model=Dispute)
-def auto_refund_dispute(dispute_id: int):
-    for index, dispute in enumerate(disputes_db):
-        if dispute.dispute_id == dispute_id:
-            if datetime.utcnow() < dispute.seller_response_deadline:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Seller response deadline has not passed yet"
-                )
+# ── PATCH /raise-dispute/<id>/seller-agree — Seller agrees, notify admin ─────
+@app.route("/raise-dispute/<int:dispute_id>/seller-agree", methods=["PATCH"])
+def seller_agree(dispute_id):
+    # Update dispute status
+    update_resp = requests.patch(
+        f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}",
+        json={"disputeStatus": "AWAITING_DECISION"},
+        timeout=10,
+    )
+    if update_resp.status_code != 200:
+        return jsonify({"code": update_resp.status_code, "step": "update_dispute",
+                        "message": update_resp.text}), update_resp.status_code
 
-            updated_dispute = dispute.model_copy(
-                update={
-                    "status": DisputeStatus.AUTO_REFUNDED,
-                    "resolved_at": datetime.utcnow()
-                }
+    dispute_data = update_resp.json().get("data", {})
+    order_id  = dispute_data.get("orderID", 0)
+    buyer_id  = dispute_data.get("buyerID", 0)
+
+    # Notify admin
+    send_notification_direct(
+        order_id, dispute_id, 99,
+        f"[Ouimarché] Seller has agreed on Dispute #{dispute_id}. Admin decision required for Order #{order_id}. Please review and make a final decision."
+    )
+    # Notify buyer that seller has acknowledged the dispute
+    send_notification_direct(
+        order_id, dispute_id, buyer_id,
+        f"[Ouimarché] The seller has acknowledged Dispute #{dispute_id} for Order #{order_id}. An admin will now review and make a final decision."
+    )
+
+    # Publish event
+    publish_event("dispute_events", "dispute.seller_agreed", {
+        "disputeID": dispute_id,
+        "orderID":   order_id,
+        "buyerID":   dispute_data.get("buyerID", 0),
+        "sellerID":  dispute_data.get("sellerID", 0),
+        "amount":    dispute_data.get("amount", 0),
+        "listingTitle": dispute_data.get("listingTitle", ""),
+    })
+
+    return jsonify({
+        "code": 200,
+        "message": "Agreement received. Admin has been notified.",
+        "data": dispute_data,
+    }), 200
+
+
+# ── PUT /raise-dispute/<id>/approve-evidence/<eid> ───────────────────────────
+@app.route("/raise-dispute/<int:dispute_id>/approve-evidence/<int:evidence_id>", methods=["PUT"])
+def approve_evidence(dispute_id, evidence_id):
+    approve_resp = requests.put(f"{EVIDENCE_SERVICE_URL}/evidence/{evidence_id}/approve", timeout=10)
+    if approve_resp.status_code != 200:
+        return jsonify({"code": approve_resp.status_code, "step": "approve_evidence",
+                        "message": approve_resp.text}), approve_resp.status_code
+
+    update_dispute_resp = requests.patch(
+        f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}",
+        json={"disputeStatus": "RESPONSE"},
+        timeout=10,
+    )
+
+    return jsonify({
+        "code":    200,
+        "message": "Evidence approved and dispute updated to RESPONSE.",
+        "data": {
+            "evidence": approve_resp.json().get("data"),
+            "dispute":  update_dispute_resp.json().get("data") if update_dispute_resp.status_code == 200 else None,
+        },
+    }), 200
+
+
+# ── POST /raise-dispute/<id>/resolve — Admin approves → refund buyer ─────────
+@app.route("/raise-dispute/<int:dispute_id>/resolve", methods=["POST"])
+def resolve_dispute(dispute_id):
+    data = request.get_json()
+    if "orderID" not in data:
+        return jsonify({"code": 400, "message": "Missing field: orderID"}), 400
+
+    order_id = data["orderID"]
+
+    # Refund buyer
+    refund_resp = requests.post(f"{PAYMENT_SERVICE_URL}/payment/refund",
+                                json={"orderID": order_id}, timeout=10)
+    if refund_resp.status_code != 200:
+        # Best-effort: continue even if refund fails (maybe no Stripe in dev)
+        print(f"[resolve] WARNING: Refund failed: {refund_resp.text}")
+
+    # Update dispute status
+    requests.patch(f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}",
+                   json={"disputeStatus": "APPROVED"}, timeout=10)
+
+    # Update order status
+    requests.put(f"{ORDER_SERVICE_URL}/orders/{order_id}",
+                 json={"status": "REFUNDED"}, timeout=10)
+
+    # Fetch dispute for notification info
+    dispute_data = {}
+    try:
+        dr = requests.get(f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}", timeout=10)
+        if dr.status_code == 200:
+            dispute_data = dr.json().get("data", {})
+    except:
+        pass
+
+    buyer_id  = dispute_data.get("buyerID", data.get("buyerID", 0))
+    seller_id = dispute_data.get("sellerID", data.get("sellerID", 0))
+    amount    = dispute_data.get("amount", 0)
+    listing   = dispute_data.get("listingTitle", "")
+
+    # Notify buyer
+    send_notification_direct(
+        order_id, dispute_id, buyer_id,
+        f"[Ouimarché] ✅ Dispute #{dispute_id} APPROVED. "
+        f"You will be refunded ${amount} for '{listing}'. "
+        f"Order #{order_id}. Funds will be returned to your original payment method."
+    )
+    # Notify seller
+    send_notification_direct(
+        order_id, dispute_id, seller_id,
+        f"[Ouimarché] Dispute #{dispute_id} outcome: APPROVED in buyer's favour. "
+        f"Buyer has been refunded ${amount} for '{listing}'. "
+        f"Order #{order_id}."
+    )
+
+    # Publish event
+    publish_event("dispute_events", "dispute.resolved", {
+        "disputeID": dispute_id, "orderID": order_id, "outcome": "APPROVED",
+        "buyerID": buyer_id, "sellerID": seller_id,
+        "amount": amount, "listingTitle": listing,
+    })
+
+    return jsonify({
+        "code": 200,
+        "message": "Dispute approved. Buyer refunded.",
+        "data": {"refund": refund_resp.json() if refund_resp.status_code == 200 else None},
+    }), 200
+
+
+# ── POST /raise-dispute/<id>/reject — Admin rejects → release to seller ──────
+@app.route("/raise-dispute/<int:dispute_id>/reject", methods=["POST"])
+def reject_dispute(dispute_id):
+    data = request.get_json()
+    if "orderID" not in data:
+        return jsonify({"code": 400, "message": "Missing field: orderID"}), 400
+
+    order_id = data["orderID"]
+
+    # Release payment to seller
+    release_resp = requests.post(f"{PAYMENT_SERVICE_URL}/payment/release",
+                                 json={"orderID": order_id}, timeout=10)
+    if release_resp.status_code != 200:
+        print(f"[reject] WARNING: Release failed: {release_resp.text}")
+
+    # Update dispute status
+    requests.patch(f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}",
+                   json={"disputeStatus": "REJECTED"}, timeout=10)
+
+    # Update order status
+    requests.put(f"{ORDER_SERVICE_URL}/orders/{order_id}",
+                 json={"status": "COMPLETED"}, timeout=10)
+
+    # Fetch dispute for notification info
+    dispute_data = {}
+    try:
+        dr = requests.get(f"{DISPUTE_SERVICE_URL}/dispute/{dispute_id}", timeout=10)
+        if dr.status_code == 200:
+            dispute_data = dr.json().get("data", {})
+    except:
+        pass
+
+    buyer_id  = dispute_data.get("buyerID", data.get("buyerID", 0))
+    seller_id = dispute_data.get("sellerID", data.get("sellerID", 0))
+    amount    = dispute_data.get("amount", 0)
+    listing   = dispute_data.get("listingTitle", "")
+
+    # Notify buyer
+    send_notification_direct(
+        order_id, dispute_id, buyer_id,
+        f"[Ouimarché] Dispute #{dispute_id} outcome: REJECTED. "
+        f"Funds of ${amount} have been released to the seller for '{listing}'. "
+        f"Order #{order_id}."
+    )
+    # Notify seller
+    send_notification_direct(
+        order_id, dispute_id, seller_id,
+        f"[Ouimarché] ✅ Dispute #{dispute_id} REJECTED in your favour. "
+        f"${amount} has been released to you for '{listing}'. "
+        f"Order #{order_id}."
+    )
+
+    # Publish event
+    publish_event("dispute_events", "dispute.rejected", {
+        "disputeID": dispute_id, "orderID": order_id, "outcome": "REJECTED",
+        "buyerID": buyer_id, "sellerID": seller_id,
+    })
+
+    return jsonify({
+        "code": 200,
+        "message": "Dispute rejected. Payment released to seller.",
+        "data": {"release": release_resp.json() if release_resp.status_code == 200 else None},
+    }), 200
+
+
+# ── POST /raise-dispute/<id>/message — Send dispute thread message ──────────
+@app.route("/raise-dispute/<int:dispute_id>/message", methods=["POST"])
+def send_dispute_message(dispute_id):
+    data = request.get_json()
+    sender_id   = data.get('senderID')
+    receiver_id = data.get('receiverID')
+    content     = data.get('content', '')
+    if not content or not sender_id or not receiver_id:
+        return jsonify({"code": 400, "message": "senderID, receiverID and content are required"}), 400
+
+    try:
+        msg_resp = requests.post(
+            f"{MESSAGING_SERVICE_URL}/messages",
+            json={
+                "orderID":     -dispute_id,
+                "senderID":    sender_id,
+                "receiverID":  receiver_id,
+                "content":     content,
+                "messageType": "text",
+            },
+            timeout=10
+        )
+        if msg_resp.status_code not in (200, 201):
+            return jsonify({"code": msg_resp.status_code, "message": msg_resp.text}), msg_resp.status_code
+
+        # Notify receiver in-app (no SMS for thread messages)
+        try:
+            requests.post(
+                f"{NOTIFICATION_SERVICE_URL}/notification",
+                json={
+                    "orderID":      0,
+                    "disputeID":    dispute_id,
+                    "notification": f"[Ouimarché] New message in Dispute #{dispute_id}: \"{content[:60]}{'...' if len(content) > 60 else ''}\"",
+                    "receiverID":   receiver_id,
+                },
+                timeout=10
             )
-            disputes_db[index] = updated_dispute
-            return updated_dispute
+        except Exception as e:
+            print(f"[dispute-message] WARNING: Notification failed: {e}")
 
-    raise HTTPException(status_code=404, detail="Dispute not found")
+        return jsonify(msg_resp.json()), 201
+    except Exception as e:
+        return jsonify({"code": 503, "message": str(e)}), 503
+
+
+# ── GET /raise-dispute/<id>/messages — Fetch dispute thread messages ──────────
+@app.route("/raise-dispute/<int:dispute_id>/messages", methods=["GET"])
+def get_dispute_messages(dispute_id):
+    try:
+        resp = requests.get(
+            f"{MESSAGING_SERVICE_URL}/messages",
+            params={"orderID": -dispute_id},
+            timeout=10
+        )
+        if resp.status_code != 200:
+            return jsonify({"code": resp.status_code, "message": resp.text}), resp.status_code
+        return jsonify(resp.json()), 200
+    except Exception as e:
+        return jsonify({"code": 503, "message": str(e)}), 503
+
+
+# ── Health check ─────────────────────────────────────────────────────────────
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"code": 200, "status": "raiseDispute composite service running"}), 200
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5010, debug=True)

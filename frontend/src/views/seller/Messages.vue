@@ -492,17 +492,16 @@ function confirmDeal(amount) {
   const dealKey = order.value ? order.value.listing_id : convKey
   saveDeal(dealKey, price)
 
-  // Post an agreement message so the deal amount is persisted in backend.
+  // Also post a regular text message so it appears in both chats
   const content = `✅ Deal confirmed at ${price}. Proceed to payment.`
-  addLocalMessage({ id: `local_${Date.now()}`, sender: 'seller', type: 'agreement', text: content, content, offerAmount: price, time: timestamp() })
+  addLocalMessage({ id: `local_${Date.now()}`, sender: 'seller', type: 'text', text: content, content, time: timestamp() })
 
   negotiateSendMessage({
     orderID:     convKey,
     senderID:    mockSeller.id,
     receiverID:  order.value?.buyer_id ?? mockUser?.id ?? 1,
     content,
-    messageType: 'agreement',
-    offerAmount: price,
+    messageType: 'text',
     isFirst:     false,
   }).catch(err => console.warn('[Negotiate] Backend unavailable:', err.message))
 }

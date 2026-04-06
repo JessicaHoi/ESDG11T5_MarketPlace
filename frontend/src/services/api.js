@@ -124,10 +124,6 @@ export function negotiateGetMessages(orderID) {
   return get(`/negotiate/messages?orderID=${orderID}`)
 }
 
-export function negotiateGetDeal(orderID) {
-  return get(`/negotiate/deal?orderID=${orderID}`)
-}
-
 // ─── ATOMIC: Messaging ───────────────────────────────────────────────────────
 export function sendMessage({ orderID, senderID, receiverID, content, messageType, offerAmount, receiverPhone }) {
   return post('/messages', { orderID, senderID, receiverID, content, messageType, offerAmount, receiverPhone })

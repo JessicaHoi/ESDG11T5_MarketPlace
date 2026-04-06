@@ -218,7 +218,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
-import { placeOrder, fetchListingById, negotiateGetDeal } from '../../services/api.js'
+import { placeOrder, fetchListingById } from '../../services/api.js'
 import { getDeal, clearDeal } from '../../data/negotiationStore.js'
 
 // ─── Reservation timer (10 minutes) ──────────────────────────────────────────
@@ -240,7 +240,6 @@ const router = useRouter()
 const listing = ref(null)
 const pageLoading = ref(true)
 const apiError    = ref(null)
-const backendNegotiatedPrice = ref(null)
 
 onMounted(async () => {
   // Start reservation countdown
@@ -269,20 +268,6 @@ onMounted(async () => {
     } else {
       apiError.value = "Product could not be found."
     }
-
-    const listingID = parseInt(route.params.id)
-    const backendDeal = await negotiateGetDeal(listingID).catch(() => null)
-    const backendPrice = backendDeal?.deal?.price
-    if (backendPrice) {
-      backendNegotiatedPrice.value = backendPrice
-    }
-
-    if (!backendNegotiatedPrice.value) {
-      const localDeal = getDeal(listingID)
-      if (localDeal?.price) {
-        backendNegotiatedPrice.value = localDeal.price
-      }
-    }
   } catch (err) {
     apiError.value = "Failed to load product details from the server."
     console.error(err)
@@ -291,11 +276,7 @@ onMounted(async () => {
   }
 })
 
-const negotiatedPrice = computed(() => {
-  if (route.query.price) return parseFloat(route.query.price)
-  if (backendNegotiatedPrice.value) return parseFloat(backendNegotiatedPrice.value)
-  return null
-})
+const negotiatedPrice = computed(() => route.query.price ? parseInt(route.query.price) : null)
 const totalAmount = computed(() => {
   if (!listing.value) return 0
   const base = negotiatedPrice.value || listing.value.price
