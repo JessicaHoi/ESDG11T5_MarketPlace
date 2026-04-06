@@ -260,7 +260,6 @@ services:
       - ORDER_SERVICE_URL=http://order-service:8000
       - PAYMENT_SERVICE_URL=http://payment-service:5000
       - LISTING_SERVICE_URL=${LISTING_SERVICE_URL}
-      - MESSAGING_SERVICE_URL=http://messaging-service:5003
       - NOTIFICATION_SERVICE_URL=http://notification-service:5002
       - BUYER_PHONE=${BUYER_PHONE}
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/

@@ -340,7 +340,6 @@ async function handlePayment() {
       sellerID:        listing.value.sellerId ?? 2,
       amount:          totalAmount.value,
       listingTitle:    listing.value.title,
-      message:         `Hi! I'd like to purchase your ${listing.value.title}.`,
       paymentMethodID: STRIPE_TEST_PM,
       deliveryOption:  delivery.value,
     })

@@ -6,7 +6,6 @@ load_dotenv()
 ORDER_URL        = os.environ.get("ORDER_SERVICE_URL")
 PAYMENT_URL      = os.environ.get("PAYMENT_SERVICE_URL")
 LISTING_URL      = os.environ.get("LISTING_SERVICE_URL")
-MESSAGING_URL    = os.environ.get("MESSAGING_SERVICE_URL")
 NOTIFICATION_URL = os.environ.get("NOTIFICATION_SERVICE_URL", "http://notification-service:5002")
 RABBITMQ_URL     = os.environ.get("RABBITMQ_URL")
 SELLER_PHONE     = os.environ.get("SELLER_PHONE")
@@ -40,7 +39,6 @@ def place_order(data: dict):
     seller_id     = int(data['sellerID'])
     amount        = data['amount']
     listing_title = data.get('listingTitle', f'Listing #{listing_id}')
-    message       = data.get('message', 'I would like to purchase this item.')
 
     # ---------- Step 1: Reserve the listing (OutSystems) ----------
     # TODO: Uncomment once OutSystems Listing Service URL is available
@@ -49,28 +47,8 @@ def place_order(data: dict):
     #     return {"error": "Step 1 failed: Could not reserve listing", "details": safe_json(reserve_resp)}, 400
     print(f"[1] SKIPPED — Listing reservation bypassed. listing_id={listing_id}")
 
-    # ---------- Step 2: Send message (best-effort) ----------
-    print(f"[2] Sending message from buyer {buyer_id} to seller {seller_id}...")
-    try:
-        msg_resp = requests.post(
-            f"{MESSAGING_URL}/messages",
-            json={
-                "orderID":    0,
-                "senderID":   buyer_id,
-                "receiverID": seller_id,
-                "content":    message
-            },
-            timeout=10
-        )
-        if msg_resp.status_code != 201:
-            print(f"[2] WARNING: Messaging failed ({msg_resp.status_code}): {msg_resp.text} — continuing anyway")
-        else:
-            print(f"[2] Message sent successfully")
-    except Exception as e:
-        print(f"[2] WARNING: Messaging service unreachable: {e} — continuing anyway")
-
-    # ---------- Step 3: Create the order ----------
-    print(f"[3] Creating order for '{listing_title}'...")
+    # ---------- Step 2: Create the order ----------
+    print(f"[2] Creating order for '{listing_title}'...")
     order_resp = requests.post(
         f"{ORDER_URL}/orders",
         json={
@@ -82,13 +60,13 @@ def place_order(data: dict):
         }
     )
     if order_resp.status_code != 201:
-        return {"error": "Step 3 failed: Could not create order", "details": safe_json(order_resp)}, 400
+        return {"error": "Step 2 failed: Could not create order", "details": safe_json(order_resp)}, 400
 
     order = order_resp.json()
     order_id = order['order_id']
 
-    # ---------- Step 4: Hold payment in escrow ----------
-    print(f"[4] Holding payment in escrow for order {order_id}...")
+    # ---------- Step 3: Hold payment in escrow ----------
+    print(f"[3] Holding payment in escrow for order {order_id}...")
     payment_resp = requests.post(
         f"{PAYMENT_URL}/payment/escrow",
         json={
@@ -98,12 +76,12 @@ def place_order(data: dict):
         }
     )
     if payment_resp.status_code != 201:
-        return {"error": "Step 4 failed: Could not hold payment", "details": safe_json(payment_resp)}, 400
+        return {"error": "Step 3 failed: Could not hold payment", "details": safe_json(payment_resp)}, 400
 
     payment = payment_resp.json()
 
-    # ---------- Step 5: Decrement listing quantity (OutSystems) ----------
-    print(f"[5] Updating listing quantity in OutSystems for listing_id={listing_id}...")
+    # ---------- Step 4: Decrement listing quantity (OutSystems) ----------
+    print(f"[4] Updating listing quantity in OutSystems for listing_id={listing_id}...")
     try:
         # Step 5a: GET current listing details
         get_resp = requests.get(
@@ -132,16 +110,16 @@ def place_order(data: dict):
                 timeout=10
             )
             if put_resp.status_code == 200:
-                print(f"[5] Listing quantity updated: {current_qty} → {new_qty}")
+                print(f"[4] Listing quantity updated: {current_qty} → {new_qty}")
             else:
-                print(f"[5] WARNING: Failed to update quantity ({put_resp.status_code}): {put_resp.text} — continuing anyway")
+                print(f"[4] WARNING: Failed to update quantity ({put_resp.status_code}): {put_resp.text} — continuing anyway")
         else:
-            print(f"[5] WARNING: Could not fetch listing ({get_resp.status_code}) — quantity update skipped")
+            print(f"[4] WARNING: Could not fetch listing ({get_resp.status_code}) — quantity update skipped")
     except Exception as e:
-        print(f"[5] WARNING: OutSystems unreachable: {e} — continuing anyway")
+        print(f"[4] WARNING: OutSystems unreachable: {e} — continuing anyway")
 
-    # ---------- Step 5b: Notify seller via SMS ----------
-    print(f"[5b] Notifying seller via SMS...")
+    # ---------- Step 5: Notify seller via SMS ----------
+    print(f"[5] Notifying seller via SMS...")
     delivery_option = data.get('deliveryOption', 'meetup')
     delivery_text = 'Shipping' if delivery_option == 'shipping' else 'Self-collection / Meetup'
     sms_body = (
@@ -161,11 +139,11 @@ def place_order(data: dict):
             },
             timeout=10,
         )
-        print(f"[5b] Seller notification sent")
+        print(f"[5] Seller notification sent")
     except Exception as e:
-        print(f"[5b] WARNING: Could not send seller notification: {e}")
+        print(f"[5] WARNING: Could not send seller notification: {e}")
 
-    # ---------- Step 6: Notify buyer and seller via AMQP ----------
+    # ---------- Step 6: Publish order.placed to RabbitMQ ----------
     print(f"[6] Publishing order.placed event...")
     try:
         publish_order_placed({

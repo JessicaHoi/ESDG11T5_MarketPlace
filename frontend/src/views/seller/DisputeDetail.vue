@@ -117,7 +117,7 @@
                 <textarea v-model="responseText" class="input-field resize-none" rows="4" placeholder="Explain your side of the story..."></textarea>
                 <p class="section-label mt-4 mb-2 text-muted">Upload Evidence (Optional)</p>
                 <input type="file" ref="fileInput" multiple accept="image/*,video/*,.pdf" @change="handleFileSelect" class="mb-3 text-sm font-mono text-muted file:mr-4 file:py-2 file:px-4 file:border-0 file:text-sm file:font-semibold file:bg-sage/10 file:text-sage hover:file:bg-sage/20"/>
-                <<div v-if="evidenceStore.length > 0" class="mb-3 space-y-2">
+                <div v-if="evidenceStore.length > 0" class="mb-3 space-y-2">
                   <div v-for="(file, i) in evidenceStore" :key="i" class="flex items-center gap-3 bg-ink/5 px-3 py-2">
                     <img v-if="isImageFile(file)" :src="getPreviewURL(file)" class="w-10 h-10 object-cover border border-ink/10 flex-shrink-0" />
                     <span v-else class="text-xl flex-shrink-0">{{ fileIcon(file.name) }}</span>
@@ -149,7 +149,7 @@
               <div v-if="dispute.sellerResponse && dispute.disputeStatus === 'RESPONSE' && !isResolved">
                 <button @click="handleSellerAgree" class="w-full bg-sage text-white font-display font-bold px-4 py-3 hover:bg-sage/80 transition-colors text-sm tracking-wide uppercase"
                   :disabled="agreeing">
-                  {{ agreeing ? 'Processing...' : '🤝 Agreement Received' }}
+                  {{ agreeing ? 'Processing...' : '🤝 Agreement Reached' }}
                 </button>
                 <p class="text-xs text-muted font-mono text-center mt-2">This will notify the admin to make a final decision.</p>
               </div>
