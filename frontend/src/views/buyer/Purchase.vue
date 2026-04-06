@@ -1,0 +1,377 @@
+<template>
+  <div class="min-h-screen bg-paper">
+    <Navbar :user="mockUser" />
+
+    <!-- Reservation countdown banner -->
+    <div
+      class="fixed top-16 left-0 right-0 z-40 flex items-center justify-between px-6 py-2 text-xs font-mono transition-colors"
+      :class="timerUrgent ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'"
+    >
+      <span>🔒 Item reserved for you</span>
+      <div class="flex items-center gap-2">
+        <span v-if="timerUrgent" class="animate-pulse">⚠ Expiring soon!</span>
+        <span class="font-bold tracking-widest text-sm">{{ formattedTime }}</span>
+      </div>
+    </div>
+
+    <div class="pt-24">
+      <div class="max-w-4xl mx-auto px-6 pt-8">
+        <button @click="$router.back()" class="section-label text-muted hover:text-accent transition-colors">← Back</button>
+      </div>
+
+      <div v-if="listing" class="max-w-4xl mx-auto px-6 py-6">
+        <h1 class="font-display font-extrabold text-3xl mb-8">Complete Purchase</h1>
+
+        <div v-if="apiError" class="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm font-mono">
+          ⚠ {{ apiError }}
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+          <div class="lg:col-span-3 space-y-6">
+            <div class="bg-white border border-ink/10 p-6">
+              <p class="section-label mb-4">Contact Information</p>
+              <div class="space-y-3">
+                <input type="text" class="input-field" placeholder="Full name" v-model="contact.name" />
+                <input type="email" class="input-field" placeholder="Email" v-model="contact.email" />
+                <input type="tel" class="input-field" placeholder="Phone number" v-model="contact.phone" />
+              </div>
+            </div>
+
+            <div class="bg-white border border-ink/10 p-6">
+              <p class="section-label mb-4">Meetup / Delivery Preference</p>
+              <div class="space-y-2">
+                <label class="flex items-center gap-3 p-3 border border-ink/10 cursor-pointer hover:border-accent/40 transition-colors" :class="{ 'border-accent bg-accent/5': delivery === 'meetup' }">
+                  <input type="radio" v-model="delivery" value="meetup" class="accent-accent" />
+                  <div>
+                    <p class="font-display font-semibold text-sm">Self-Collection / Meetup</p>
+                    <p class="text-xs text-muted font-mono">Arrange with seller directly</p>
+                  </div>
+                </label>
+                <label class="flex items-center gap-3 p-3 border border-ink/10 cursor-pointer hover:border-accent/40 transition-colors" :class="{ 'border-accent bg-accent/5': delivery === 'shipping' }">
+                  <input type="radio" v-model="delivery" value="shipping" class="accent-accent" />
+                  <div>
+                    <p class="font-display font-semibold text-sm">Shipping (+$5.00)</p>
+                    <p class="text-xs text-muted font-mono">Delivered to your address</p>
+                  </div>
+                </label>
+                <!-- Shipping address box — shown when shipping is selected -->
+                <div v-if="delivery === 'shipping'" class="mt-2 ml-1">
+                  <label class="section-label block mb-2">Delivery Address</label>
+                  <textarea
+                    v-model="shippingAddr"
+                    class="input-field resize-none text-sm font-mono"
+                    rows="2"
+                    placeholder="Enter your delivery address"
+                  ></textarea>
+                  <p class="text-xs text-muted font-mono mt-1">Pre-filled from your profile — edit if needed.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-white border border-ink/10 p-6">
+              <div class="flex items-center justify-between mb-4">
+                <p class="section-label">Payment Details</p>
+                <div class="flex gap-2 items-center">
+                  <span class="text-xs font-mono text-muted">Powered by</span>
+                  <span class="font-display font-bold text-sm text-purple-600">stripe</span>
+                </div>
+              </div>
+
+              <div class="space-y-3">
+                <div>
+                  <label class="section-label block mb-2">Card Number</label>
+                  <div class="input-field flex items-center justify-between">
+                    <input :value="cardNumber" @input="formatCardNumber" type="text" inputmode="numeric" class="flex-1 font-mono text-sm outline-none bg-transparent" placeholder="4242 4242 4242 4242" maxlength="19" />
+                    <span class="text-muted text-lg">💳</span>
+                  </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="section-label block mb-2">Expiry Date</label>
+                    <input type="text" class="input-field font-mono" placeholder="MM / YY" v-model="cardExpiry" maxlength="7" />
+                  </div>
+                  <div>
+                    <label class="section-label block mb-2">CVC</label>
+                    <input type="text" class="input-field font-mono" placeholder="•••" v-model="cardCvc" maxlength="4" />
+                  </div>
+                </div>
+                <div>
+                  <label class="section-label block mb-2">Name on Card</label>
+                  <input type="text" class="input-field" placeholder="Full name" v-model="cardName" />
+                </div>
+              </div>
+
+              <!-- <div class="mt-3 bg-amber-50 border border-amber-200 p-2 text-xs text-amber-700 font-mono">
+                ℹ Demo mode: uses Stripe test card (pm_card_visa)
+              </div> -->
+
+              <div class="mt-4 bg-sage/5 border border-sage/20 p-3 flex gap-2">
+                <span class="text-sage">🔒</span>
+                <p class="text-xs text-slate leading-relaxed">
+                  <strong class="font-display">Escrow Protection:</strong> Your ${{ totalAmount }} will be held securely.
+                  Funds are only released to the seller once you confirm receipt.
+                </p>
+              </div>
+            </div>
+
+            <button @click="handlePayment" class="btn-primary w-full py-4 text-base" :disabled="processing">
+              <span v-if="processing" class="flex items-center justify-center gap-2">
+                <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                Processing...
+              </span>
+              <span v-else>Pay ${{ totalAmount }} — Hold in Escrow</span>
+            </button>
+          </div>
+
+          <div class="lg:col-span-2">
+            <div class="bg-white border border-ink/10 p-6 sticky top-24">
+              <p class="section-label mb-4">Order Summary</p>
+
+              <div v-if="negotiatedPrice && negotiatedPrice !== listing.price" class="bg-sage/10 border border-sage/20 px-3 py-2 mb-3 flex items-center gap-2">
+                <span class="text-sage text-sm">🤝</span>
+                <p class="text-xs text-sage font-mono">Negotiated: ${{ negotiatedPrice }} <span class="line-through text-muted">${{ listing.price }}</span></p>
+              </div>
+
+              <div class="flex gap-3 mb-4">
+                <div class="w-16 h-16 bg-cream overflow-hidden flex-shrink-0">
+                  <img :src="listing.image" :alt="listing.title" class="w-full h-full object-cover" />
+                </div>
+                <div>
+                  <p class="font-display font-semibold text-sm leading-tight">{{ listing.title }}</p>
+                  <p class="text-xs text-muted font-mono mt-1">{{ listing.condition }} · {{ listing.seller }}</p>
+                </div>
+              </div>
+
+              <div class="border-t border-ink/10 pt-4 space-y-2">
+                <div class="flex justify-between text-sm">
+                  <span class="text-slate">Item price</span>
+                  <span class="font-mono">${{ negotiatedPrice || listing.price }}</span>
+                </div>
+                <div class="flex justify-between text-sm" v-if="delivery === 'shipping'">
+                  <span class="text-slate">Shipping</span>
+                  <span class="font-mono">$5.00</span>
+                </div>
+                <div class="flex justify-between text-sm text-muted">
+                  <span>Escrow fee</span>
+                  <span class="font-mono">$0.00</span>
+                </div>
+              </div>
+
+              <div class="border-t border-ink/10 pt-4 mt-4 flex justify-between">
+                <span class="font-display font-bold">Total</span>
+                <span class="font-display font-bold text-accent">${{ totalAmount }}</span>
+              </div>
+
+              <div class="mt-4 pt-4 border-t border-ink/10">
+                <p class="section-label mb-2">Protected by Ouimarché</p>
+                <ul class="space-y-1">
+                  <li v-for="item in protections" :key="item" class="text-xs text-slate flex items-center gap-2">
+                    <span class="text-sage">✓</span>{{ item }}
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Validation error modal -->
+  <div v-if="validationError" class="fixed inset-0 bg-ink/60 flex items-center justify-center z-50 p-6" @click.self="validationError = ''">
+    <div class="bg-paper max-w-sm w-full p-8 text-center">
+      <div class="w-14 h-14 bg-red-100 flex items-center justify-center mx-auto mb-4 text-2xl">⚠</div>
+      <h2 class="font-display font-extrabold text-xl mb-2 text-ink">Missing Payment Details</h2>
+      <p class="text-slate text-sm mb-6 leading-relaxed">{{ validationError }}</p>
+      <button @click="validationError = ''" class="btn-primary w-full">Go Back &amp; Fix</button>
+    </div>
+  </div>
+
+  <div v-if="success" class="fixed inset-0 bg-ink/60 flex items-center justify-center z-50 p-6">
+    <div class="bg-paper max-w-sm w-full p-8 text-center">
+      <div class="w-16 h-16 bg-sage/20 flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
+      <h2 class="font-display font-extrabold text-2xl mb-2">Payment Held!</h2>
+      <p class="text-slate text-sm mb-6 leading-relaxed">
+        Your ${{ totalAmount }} has been securely held in escrow.
+        The seller will now arrange delivery with you.
+      </p>
+      <div class="bg-cream p-3 mb-6 text-left space-y-2">
+        <div class="flex justify-between text-xs font-mono">
+          <span class="text-muted">Order ID</span>
+          <span class="text-ink">{{ orderResult?.orderID }}</span>
+        </div>
+        <div class="flex justify-between text-xs font-mono">
+          <span class="text-muted">Payment ID</span>
+          <span class="text-ink">{{ orderResult?.paymentID }}</span>
+        </div>
+      </div>
+      <button @click="$router.push('/orders')" class="btn-primary w-full">View My Orders</button>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import Navbar from '../../components/Navbar.vue'
+import { mockUser } from '../../data/mockData.js'
+import { placeOrder, fetchListingById, negotiateGetDeal } from '../../services/api.js'
+import { getDeal, clearDeal } from '../../data/negotiationStore.js'
+
+// ─── Reservation timer (10 minutes) ──────────────────────────────────────────
+const RESERVATION_SECONDS = 10 * 60
+const timeLeft  = ref(RESERVATION_SECONDS)
+let timerHandle = null
+
+const formattedTime = computed(() => {
+  const m = Math.floor(timeLeft.value / 60).toString().padStart(2, '0')
+  const s = (timeLeft.value % 60).toString().padStart(2, '0')
+  return `${m}:${s}`
+})
+
+const timerUrgent = computed(() => timeLeft.value <= 60)
+
+const route = useRoute()
+const router = useRouter()
+
+const listing = ref(null)
+const pageLoading = ref(true)
+const apiError    = ref(null)
+const backendNegotiatedPrice = ref(null)
+
+onMounted(async () => {
+  // Start reservation countdown
+  timerHandle = setInterval(() => {
+    timeLeft.value--
+    if (timeLeft.value <= 0) {
+      clearInterval(timerHandle)
+      // Reservation expired — redirect back to listing
+      router.replace(`/listings/${route.params.id}`)
+    }
+  }, 1000)
+
+  try {
+    const res = await fetchListingById(route.params.id)
+    if (res && res.data && res.data.listingName) {
+      const data = res.data
+      listing.value = {
+        id: data.listingID,
+        title: data.listingName,
+        price: data.listingPrice,
+        condition: data.listingCategory || 'General',
+        seller: 'External Seller',
+        sellerId: 2, // Required mock for functioning checkout downstream
+        image: data.listingImgUrl && data.listingImgUrl.length > 5 ? data.listingImgUrl : 'https://placehold.co/400x400/f2f2eb/1a1a1a?text=Product'
+      }
+    } else {
+      apiError.value = "Product could not be found."
+    }
+
+    const listingID = parseInt(route.params.id)
+    const backendDeal = await negotiateGetDeal(listingID).catch(() => null)
+    const backendPrice = backendDeal?.deal?.price
+    if (backendPrice) {
+      backendNegotiatedPrice.value = backendPrice
+    }
+
+    if (!backendNegotiatedPrice.value) {
+      const localDeal = getDeal(listingID)
+      if (localDeal?.price) {
+        backendNegotiatedPrice.value = localDeal.price
+      }
+    }
+  } catch (err) {
+    apiError.value = "Failed to load product details from the server."
+    console.error(err)
+  } finally {
+    pageLoading.value = false
+  }
+})
+
+const negotiatedPrice = computed(() => {
+  if (route.query.price) return parseFloat(route.query.price)
+  if (backendNegotiatedPrice.value) return parseFloat(backendNegotiatedPrice.value)
+  return null
+})
+const totalAmount = computed(() => {
+  if (!listing.value) return 0
+  const base = negotiatedPrice.value || listing.value.price
+  return base + (delivery.value === 'shipping' ? 5 : 0)
+})
+
+const delivery   = ref('meetup')
+const cardNumber = ref('')
+const cardExpiry = ref('')
+const cardCvc    = ref('')
+const cardName   = ref('')
+const contact      = ref({ name: mockUser.name, email: mockUser.email, phone: mockUser.phone || '' })
+const shippingAddr = ref(mockUser.address || '')
+
+onUnmounted(() => clearInterval(timerHandle))
+
+function formatCardNumber(e) {
+  let value = e.target.value.replace(/\D/g, '').slice(0, 16)
+  cardNumber.value = value.replace(/(\d{4})(?=\d)/g, '$1 ')
+}
+
+const processing    = ref(false)
+const success       = ref(false)
+const orderResult   = ref(null)
+const validationError = ref('')
+
+function validatePayment() {
+  const rawDigits = cardNumber.value.replace(/\s/g, '')
+  if (rawDigits.length !== 16)      return 'Please enter a valid 16-digit card number.'
+  if (cardExpiry.value.length < 4)  return 'Please enter a valid expiry date (MM / YY).'
+  if (cardCvc.value.length < 3)     return 'Please enter a valid CVC (3–4 digits).'
+  if (!cardName.value.trim())       return 'Please enter the name on your card.'
+  return ''
+}
+
+const protections = [
+  'Escrow payment protection',
+  'Buyer guarantee on disputes',
+  '48-hour seller response window',
+  'Full refund if item not delivered',
+]
+
+async function handlePayment() {
+  if (!listing.value) return
+  // Validate payment fields first
+  const err = validatePayment()
+  if (err) {
+    validationError.value = err
+    return
+  }
+  validationError.value = ''
+  apiError.value = null
+  processing.value = true
+
+  try {
+    const STRIPE_TEST_PM = 'pm_card_visa'
+
+    const result = await placeOrder({
+      listingID:       listing.value.id,
+      buyerID:         mockUser.id,
+      sellerID:        listing.value.sellerId ?? 2,
+      amount:          totalAmount.value,
+      listingTitle:    listing.value.title,
+      paymentMethodID: STRIPE_TEST_PM,
+      deliveryOption:  delivery.value,
+    })
+
+    orderResult.value = result
+    success.value = true
+    clearInterval(timerHandle)
+    // Clear negotiated price and decrement quantity in localStorage
+    clearDeal(listing.value.id)
+  } catch (err) {
+    apiError.value = err.message || 'Something went wrong. Please try again.'
+  } finally {
+    processing.value = false
+  }
+}
+</script>
