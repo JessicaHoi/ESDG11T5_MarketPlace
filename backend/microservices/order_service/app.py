@@ -189,6 +189,12 @@ def deliver_order(order_id: int):
             updated_data["status"] = OrderStatus.DELIVERED
             updated_order = Order(**updated_data)
             orders_db[index] = updated_order
+            publish_event('order.delivered', {
+                'orderID': order_id,
+                'buyerID': updated_order.buyer_id,
+                'sellerID': updated_order.seller_id,
+                'listingTitle': updated_order.order_details or f'Listing #{updated_order.listing_id}',
+            })
             return updated_order
     raise HTTPException(status_code=404, detail="Order not found")
 

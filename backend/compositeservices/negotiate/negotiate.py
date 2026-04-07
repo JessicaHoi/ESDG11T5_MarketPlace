@@ -1,17 +1,26 @@
-import os, requests
+import os, json, requests, pika
 from dotenv import load_dotenv
 
 load_dotenv()
 
 MESSAGING_URL    = os.environ.get("MESSAGING_SERVICE_URL", "http://messaging-service:5003")
-NOTIFICATION_URL = os.environ.get("NOTIFICATION_SERVICE_URL", "http://notification-service:5002")
-SELLER_PHONE     = os.environ.get("SELLER_PHONE")
-BUYER_PHONE      = os.environ.get("BUYER_PHONE")
 
-PHONE_MAP = {
-    1: BUYER_PHONE,
-    2: SELLER_PHONE,
-}
+
+def publish_event(event_type: str, payload: dict):
+    url = os.environ.get("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
+    params = pika.URLParameters(url)
+    conn = pika.BlockingConnection(params)
+    ch = conn.channel()
+
+    ch.exchange_declare(exchange='messaging_events', exchange_type='topic', durable=True)
+    ch.basic_publish(
+        exchange='messaging_events',
+        routing_key=event_type,
+        body=json.dumps(payload),
+        properties=pika.BasicProperties(delivery_mode=2)
+    )
+    conn.close()
+    print(f"[→] Published event: {event_type}")
 
 
 def safe_json(resp):
@@ -54,40 +63,20 @@ def send_message(data: dict):
             return {"error": "Failed to store message", "details": safe_json(msg_resp)}, 500
         message = msg_resp.json()
         print(f"[1] Message stored: {message.get('messageID')}")
+
+        # Publish message event to RabbitMQ from negotiate composite.
+        try:
+            event_payload = {
+                **message,
+                "isFirst": is_first,
+                "listingName": listing_name,
+                "listingPrice": listing_price,
+            }
+            publish_event('message.sent', event_payload)
+        except Exception as e:
+            print(f"[1] WARNING: Could not publish message.sent: {e} — continuing anyway")
     except Exception as e:
         return {"error": f"Messaging service unreachable: {e}"}, 503
-
-    # ---------- Step 2: Notify receiver ----------
-    print(f"[2] Sending notification to {receiver_id}...")
-    receiver_phone = PHONE_MAP.get(receiver_id) if is_first else None
-
-    if is_first and listing_name:
-        notif_text = (
-            f"[Ouimarché] User #{sender_id} is interested in '{listing_name}' "
-            f"(${listing_price}). They have started a negotiation chat."
-        )
-    else:
-        preview = content[:60] + ('...' if len(content) > 60 else '')
-        notif_text = f"[Ouimarché] New message: \"{preview}\""
-
-    try:
-        notif_payload = {
-            "orderID":      order_id,
-            "disputeID":    None,
-            "notification": notif_text,
-            "receiverID":   receiver_id,
-        }
-        if receiver_phone:
-            notif_payload["receiverPhone"] = receiver_phone
-
-        requests.post(
-            f"{NOTIFICATION_URL}/notification",
-            json=notif_payload,
-            timeout=10
-        )
-        print(f"[2] Notification sent to {receiver_id}")
-    except Exception as e:
-        print(f"[2] WARNING: Notification failed: {e} — continuing anyway")
 
     return message, 201
 

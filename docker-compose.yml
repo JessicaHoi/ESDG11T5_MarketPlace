@@ -184,11 +184,8 @@ services:
       - "5007:5003"
     environment:
       - DB_URL=mysql+mysqlconnector://root:root@messaging-db:3306/messaging_db
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
       messaging-db:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
     networks:
       - marketplace_network
@@ -326,6 +323,7 @@ services:
     environment:
       - MESSAGING_SERVICE_URL=http://messaging-service:5003
       - NOTIFICATION_SERVICE_URL=http://notification-service:5002
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
       - BUYER_PHONE=${BUYER_PHONE}
       - SELLER_PHONE=${SELLER_PHONE}
     depends_on:
@@ -333,6 +331,8 @@ services:
         condition: service_started
       notification-service:
         condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks:
       - marketplace_network
 

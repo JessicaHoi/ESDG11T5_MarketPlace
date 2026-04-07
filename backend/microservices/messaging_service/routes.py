@@ -1,6 +1,5 @@
 from flask import Blueprint, request, jsonify
 from models import db, Message
-from publisher import publish_event
 from twilio_client import send_sms
 
 bp = Blueprint('messaging', __name__)
@@ -21,9 +20,6 @@ def send_message():
     )
     db.session.add(message)
     db.session.commit()
-
-    # Publish to RabbitMQ → Notification Service will pick this up
-    publish_event('message.sent', message.to_dict())
 
     # Send SMS to receiver via Twilio (optional)
     receiver_phone = data.get('receiverPhone')

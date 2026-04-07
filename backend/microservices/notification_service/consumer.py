@@ -63,24 +63,43 @@ def handle_order_placed(app, db, Notification, payload):
 
 
 def handle_message_sent(app, db, Notification, payload):
-    """New chat message → save notification only (no SMS — handled by frontend)."""
+    """New chat message → delegate to /notification so SSE and optional SMS are handled centrally."""
     order_id    = payload['orderID']
     sender_id   = payload['senderID']
     receiver_id = payload['receiverID']
     content     = payload.get('content', '')[:80]
 
-    # Save to DB only — do NOT send SMS here
-    # SMS for messages is triggered directly by the frontend via POST /notification
-    with app.app_context():
-        note = Notification(
-            orderID=order_id,
-            disputeID=None,
-            notification=f"[Ouimarché] New message from user {sender_id}: {content}",
-            receiverID=receiver_id,
+    is_first = bool(payload.get('isFirst', False))
+    listing_name = payload.get('listingName', '')
+    listing_price = payload.get('listingPrice', '')
+
+    if is_first and listing_name:
+        message = (
+            f"[Ouimarché] User #{sender_id} is interested in '{listing_name}' "
+            f"(${listing_price}). They have started a negotiation chat."
         )
-        db.session.add(note)
-        db.session.commit()
-        print(f"[✓] Message notification saved for user {receiver_id} (no SMS)")
+    else:
+        message = f"[Ouimarché] New message from user {sender_id}: {content}"
+
+    # Use notification HTTP endpoint so one codepath handles DB write + SSE push + Twilio.
+    import requests as req
+    notification_url = os.environ.get('NOTIFICATION_SERVICE_URL', 'http://notification-service:5002')
+    notif_payload = {
+        "orderID": order_id,
+        "disputeID": None,
+        "notification": message,
+        "receiverID": receiver_id,
+    }
+    if is_first:
+        phone = get_phone(receiver_id)
+        if phone:
+            notif_payload["receiverPhone"] = phone
+
+    try:
+        req.post(f"{notification_url}/notification", json=notif_payload, timeout=10)
+        print(f"[✓] Message notification handled for user {receiver_id} via /notification")
+    except Exception as e:
+        print(f"[!] Could not notify user {receiver_id} for message.sent: {e}")
 
 
 def handle_dispute_raised(app, db, Notification, payload):

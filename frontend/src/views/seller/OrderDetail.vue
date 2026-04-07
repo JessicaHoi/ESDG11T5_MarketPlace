@@ -127,7 +127,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SellerNavbar from '../../components/SellerNavbar.vue'
 import { mockSeller, mockUser } from '../../data/mockData.js'
-import { getOrdersBySeller, updateOrder, fetchListings, getDisputes, sendNotification, deliverOrder } from '../../services/api.js'
+import { getOrdersBySeller, updateOrder, fetchListings, getDisputes, deliverOrder } from '../../services/api.js'
 
 const route   = useRoute()
 const router  = useRouter()
@@ -169,22 +169,9 @@ async function handleMarkShipped() {
   marking.value     = true
   actionError.value = null
   try {
-    const buyerID = order.value.buyer_id
-    const amount  = order.value.agreed_price
-    const title   = order.value.order_details || `Listing #${order.value.listing_id}`
-
     // Call dedicated deliver endpoint — status: RESERVED → DELIVERED
     const updated = await deliverOrder(orderID)
     order.value   = updated
-
-    // Bell notification + SMS to buyer
-    sendNotification({
-      orderID:       orderID,
-      disputeID:     null,
-      notification:  `[Ouimarché] Your item '${title}' has been marked as delivered for Order #${orderID}. Please confirm receipt once you receive it.`,
-      receiverID:    buyerID,
-      receiverPhone: mockUser.phone,
-    }).catch(() => {})
 
   } catch (err) {
     actionError.value = err.message || 'Failed to update order.'

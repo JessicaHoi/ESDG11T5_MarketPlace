@@ -14,7 +14,6 @@ DISPUTE_SERVICE_URL      = os.environ.get("DISPUTE_SERVICE_URL",      "http://di
 PAYMENT_SERVICE_URL      = os.environ.get("PAYMENT_SERVICE_URL",      "http://payment-service:5000")
 ORDER_SERVICE_URL        = os.environ.get("ORDER_SERVICE_URL",        "http://order-service:8000")
 EVIDENCE_SERVICE_URL     = os.environ.get("EVIDENCE_SERVICE_URL",     "http://evidence-service:5003")
-NOTIFICATION_SERVICE_URL = os.environ.get("NOTIFICATION_SERVICE_URL", "http://notification-service:5002")
 MESSAGING_SERVICE_URL    = os.environ.get("MESSAGING_SERVICE_URL",    "http://messaging-service:5003")
 RABBITMQ_URL             = os.environ.get("RABBITMQ_URL",             "amqp://guest:guest@rabbitmq:5672/")
 
@@ -22,13 +21,6 @@ RABBITMQ_URL             = os.environ.get("RABBITMQ_URL",             "amqp://gu
 BUYER_PHONE  = os.environ.get("BUYER_PHONE")
 SELLER_PHONE = os.environ.get("SELLER_PHONE")
 ADMIN_PHONE  = os.environ.get("ADMIN_PHONE")
-
-PHONE_MAP = {
-    1:  BUYER_PHONE,
-    2:  SELLER_PHONE,
-    99: ADMIN_PHONE,
-}
-
 
 def publish_event(exchange: str, routing_key: str, payload: dict):
     try:
@@ -46,25 +38,6 @@ def publish_event(exchange: str, routing_key: str, payload: dict):
         print(f"[AMQP] Published {routing_key} → {exchange}")
     except Exception as exc:
         print(f"[AMQP] WARNING – could not publish event: {exc}")
-
-
-def send_notification_direct(orderID, disputeID, receiverID, message):
-    """Send notification to notification service — triggers SMS automatically."""
-    try:
-        requests.post(
-            f"{NOTIFICATION_SERVICE_URL}/notification",
-            json={
-                "orderID":       orderID,
-                "disputeID":     disputeID,
-                "notification":  message,
-                "receiverID":    receiverID,
-                "receiverPhone": PHONE_MAP.get(receiverID),  # pass phone so SMS fires
-            },
-            timeout=10,
-        )
-        print(f"[notify] Sent to user {receiverID}: {message[:60]}...")
-    except Exception as e:
-        print(f"[notify] WARNING: Could not send notification: {e}")
 
 
 # ── POST /raise-dispute — Create a new dispute ──────────────────────────────
@@ -196,29 +169,9 @@ def raise_dispute():
     except Exception as e:
         print(f"[raise-dispute] Step 6 WARNING: Could not update order status: {e}")
 
-    # ---------- Step 7: Notify seller and admin ----------
-    listing_title = data.get('listingTitle', f'Order #{order_id}')
-    amount        = data.get('amount', 0)
-
-    # Notify seller
-    send_notification_direct(
-        order_id, dispute_id, seller_id,
-        f"[Ouimarché] A dispute has been raised against your listing '{listing_title}' "
-        f"(Order #{order_id}, Dispute #{dispute_id}). "
-        f"Reason: {dispute_reason.replace('_', ' ')}. "
-        f"You have 24 hours to respond."
-    )
-    # Notify admin
-    send_notification_direct(
-        order_id, dispute_id, 99,
-        f"[Ouimarché] New dispute raised. Dispute #{dispute_id}, Order #{order_id}. "
-        f"Listing: '{listing_title}', Amount: ${amount}. "
-        f"Reason: {dispute_reason.replace('_', ' ')}. Awaiting seller response."
-    )
-
     return jsonify({
         "code":    201,
-        "message": "Dispute raised successfully. Seller notified.",
+        "message": "Dispute raised successfully.",
         "data": {
             "disputeID":     dispute_id,
             "evidenceID":    evidence_id,
@@ -278,20 +231,11 @@ def seller_respond(dispute_id):
         except Exception as e:
             print(f"[seller-respond] WARNING: Could not upload evidence: {e}")
 
-    # Notify buyer
-    send_notification_direct(
-        order_id, dispute_id, buyer_id,
-        f"[Ouimarché] Seller has responded to Dispute #{dispute_id} for Order #{order_id}. Please review their response."
-    )
-    # Notify admin
-    send_notification_direct(
-        order_id, dispute_id, 99,
-        f"[Ouimarché] Seller has responded to Dispute #{dispute_id} for Order #{order_id}. Awaiting further action."
-    )
-
     # Publish event
     publish_event("dispute_events", "dispute.seller_responded", {
-        "disputeID": dispute_id, "orderID": order_id,
+        "disputeID": dispute_id,
+        "orderID": order_id,
+        "buyerID": buyer_id,
     })
 
     return jsonify({
@@ -317,17 +261,6 @@ def seller_agree(dispute_id):
     dispute_data = update_resp.json().get("data", {})
     order_id  = dispute_data.get("orderID", 0)
     buyer_id  = dispute_data.get("buyerID", 0)
-
-    # Notify admin
-    send_notification_direct(
-        order_id, dispute_id, 99,
-        f"[Ouimarché] Seller has agreed on Dispute #{dispute_id}. Admin decision required for Order #{order_id}. Please review and make a final decision."
-    )
-    # Notify buyer that seller has acknowledged the dispute
-    send_notification_direct(
-        order_id, dispute_id, buyer_id,
-        f"[Ouimarché] The seller has acknowledged Dispute #{dispute_id} for Order #{order_id}. An admin will now review and make a final decision."
-    )
 
     # Publish event
     publish_event("dispute_events", "dispute.seller_agreed", {
@@ -408,21 +341,6 @@ def resolve_dispute(dispute_id):
     amount    = dispute_data.get("amount", 0)
     listing   = dispute_data.get("listingTitle", "")
 
-    # Notify buyer
-    send_notification_direct(
-        order_id, dispute_id, buyer_id,
-        f"[Ouimarché] ✅ Dispute #{dispute_id} APPROVED. "
-        f"You will be refunded ${amount} for '{listing}'. "
-        f"Order #{order_id}. Funds will be returned to your original payment method."
-    )
-    # Notify seller
-    send_notification_direct(
-        order_id, dispute_id, seller_id,
-        f"[Ouimarché] Dispute #{dispute_id} outcome: APPROVED in buyer's favour. "
-        f"Buyer has been refunded ${amount} for '{listing}'. "
-        f"Order #{order_id}."
-    )
-
     # Publish event
     publish_event("dispute_events", "dispute.resolved", {
         "disputeID": dispute_id, "orderID": order_id, "outcome": "APPROVED",
@@ -474,25 +392,11 @@ def reject_dispute(dispute_id):
     amount    = dispute_data.get("amount", 0)
     listing   = dispute_data.get("listingTitle", "")
 
-    # Notify buyer
-    send_notification_direct(
-        order_id, dispute_id, buyer_id,
-        f"[Ouimarché] Dispute #{dispute_id} outcome: REJECTED. "
-        f"Funds of ${amount} have been released to the seller for '{listing}'. "
-        f"Order #{order_id}."
-    )
-    # Notify seller
-    send_notification_direct(
-        order_id, dispute_id, seller_id,
-        f"[Ouimarché] ✅ Dispute #{dispute_id} REJECTED in your favour. "
-        f"${amount} has been released to you for '{listing}'. "
-        f"Order #{order_id}."
-    )
-
     # Publish event
     publish_event("dispute_events", "dispute.rejected", {
         "disputeID": dispute_id, "orderID": order_id, "outcome": "REJECTED",
         "buyerID": buyer_id, "sellerID": seller_id,
+        "amount": amount, "listingTitle": listing,
     })
 
     return jsonify({
@@ -527,20 +431,14 @@ def send_dispute_message(dispute_id):
         if msg_resp.status_code not in (200, 201):
             return jsonify({"code": msg_resp.status_code, "message": msg_resp.text}), msg_resp.status_code
 
-        # Notify receiver in-app (no SMS for thread messages)
-        try:
-            requests.post(
-                f"{NOTIFICATION_SERVICE_URL}/notification",
-                json={
-                    "orderID":      0,
-                    "disputeID":    dispute_id,
-                    "notification": f"[Ouimarché] New message in Dispute #{dispute_id}: \"{content[:60]}{'...' if len(content) > 60 else ''}\"",
-                    "receiverID":   receiver_id,
-                },
-                timeout=10
-            )
-        except Exception as e:
-            print(f"[dispute-message] WARNING: Notification failed: {e}")
+        # Notify receiver via AMQP so notification service handles in-app delivery.
+        publish_event("dispute_events", "dispute.message_sent", {
+            "disputeID": dispute_id,
+            "orderID": 0,
+            "senderID": sender_id,
+            "receiverID": receiver_id,
+            "content": content,
+        })
 
         return jsonify(msg_resp.json()), 201
     except Exception as e:

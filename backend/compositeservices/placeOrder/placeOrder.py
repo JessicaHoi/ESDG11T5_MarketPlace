@@ -6,9 +6,7 @@ load_dotenv()
 ORDER_URL        = os.environ.get("ORDER_SERVICE_URL")
 PAYMENT_URL      = os.environ.get("PAYMENT_SERVICE_URL")
 LISTING_URL      = os.environ.get("LISTING_SERVICE_URL")
-NOTIFICATION_URL = os.environ.get("NOTIFICATION_SERVICE_URL", "http://notification-service:5002")
 RABBITMQ_URL     = os.environ.get("RABBITMQ_URL")
-SELLER_PHONE     = os.environ.get("SELLER_PHONE")
 
 
 def safe_json(resp):
@@ -118,43 +116,19 @@ def place_order(data: dict):
     except Exception as e:
         print(f"[4] WARNING: OutSystems unreachable: {e} — continuing anyway")
 
-    # ---------- Step 5: Notify seller via SMS ----------
-    print(f"[5] Notifying seller via SMS...")
-    delivery_option = data.get('deliveryOption', 'meetup')
-    delivery_text = 'Shipping' if delivery_option == 'shipping' else 'Self-collection / Meetup'
-    sms_body = (
-        f"[Ouimarché] Payment received! "
-        f"Buyer has paid ${amount} for '{listing_title}' (Listing #{listing_id}). "
-        f"Delivery method: {delivery_text}. "
-        f"Order #{order_id}. Please arrange handover with the buyer."
-    )
-    try:
-        requests.post(
-            f"{NOTIFICATION_URL}/notification",
-            json={
-                "orderID":       order_id,
-                "notification":  sms_body,
-                "receiverID":    seller_id,
-                "receiverPhone": SELLER_PHONE,
-            },
-            timeout=10,
-        )
-        print(f"[5] Seller notification sent")
-    except Exception as e:
-        print(f"[5] WARNING: Could not send seller notification: {e}")
-
-    # ---------- Step 6: Publish order.placed to RabbitMQ ----------
-    print(f"[6] Publishing order.placed event...")
+    # ---------- Step 5: Publish order.placed to RabbitMQ ----------
+    print(f"[5] Publishing order.placed event...")
     try:
         publish_order_placed({
             "orderID":   order_id,
             "buyerID":   buyer_id,
             "sellerID":  seller_id,
             "amount":    amount,
-            "listingID": listing_id
+            "listingID": listing_id,
+            "listingTitle": listing_title,
         })
     except Exception as e:
-        print(f"[6] WARNING: Could not publish AMQP event: {e} — continuing anyway")
+        print(f"[5] WARNING: Could not publish AMQP event: {e} — continuing anyway")
 
     return {
         "message":   "Order placed successfully",
