@@ -73,9 +73,18 @@ services:
           - /negotiate
         strip_path: false
 
+  - name: confirm-receipt-service
+    url: http://confirm-receipt-service:5011
+    routes:
+      - name: confirm-receipt-routes
+        paths:
+          - /confirm-receipt
+        strip_path: false
+
 # All frontend API calls go through Kong on port 8000:
 # POST   http://localhost:8000/placeorder
 # POST   http://localhost:8000/raise-dispute
+# POST   http://localhost:8000/confirm-receipt
 # POST   http://localhost:8000/negotiate/message
 # GET    http://localhost:8000/negotiate/messages?orderID=X
 # GET    http://localhost:8000/orders/{id}

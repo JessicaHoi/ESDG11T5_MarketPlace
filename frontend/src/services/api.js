@@ -32,6 +32,10 @@ export function placeOrder(payload) {
   return post('/placeorder', payload)
 }
 
+export function confirmReceipt(orderID) {
+  return post('/confirm-receipt', { orderID })
+}
+
 // ─── COMPOSITE: Raise Dispute ────────────────────────────────────────────────
 export function raiseDispute(payload) {
   return post('/raise-dispute', payload)

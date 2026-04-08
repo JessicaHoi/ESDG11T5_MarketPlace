@@ -337,6 +337,28 @@ services:
       - marketplace_network
 
   # ─────────────────────────────────────────────
+  # COMPOSITE SERVICE: CONFIRM RECEIPT
+  # ─────────────────────────────────────────────
+
+  confirm-receipt-service:
+    build:
+      context: ./backend/compositeservices/confirmReceipt
+      dockerfile: Dockerfile
+    container_name: confirm_receipt_service
+    ports:
+      - "5011:5011"
+    environment:
+      - ORDER_SERVICE_URL=http://order-service:8000
+      - PAYMENT_SERVICE_URL=http://payment-service:5000
+    depends_on:
+      order-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+    networks:
+      - marketplace_network
+
+  # ─────────────────────────────────────────────
   # API GATEWAY: KONG (DB-less)
   # ─────────────────────────────────────────────
 
@@ -366,6 +388,7 @@ services:
       - raise-dispute-service
       - evidence-service
       - negotiate-service
+      - confirm-receipt-service
     networks:
       - marketplace_network
 

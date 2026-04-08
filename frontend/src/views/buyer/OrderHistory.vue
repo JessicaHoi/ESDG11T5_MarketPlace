@@ -135,7 +135,7 @@
 import { ref, computed, onMounted, onActivated, onUnmounted } from 'vue'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
-import { getOrders, confirmOrder, fetchListings, releasePayment } from '../../services/api.js'
+import { getOrders, confirmReceipt, fetchListings } from '../../services/api.js'
 
 const orders      = ref([])
 const loading     = ref(true)
@@ -219,15 +219,10 @@ async function handleConfirmReceipt(order) {
   confirmingID.value = order.order_id
   confirmError.value[order.order_id] = null
   try {
-    // Step 1: Update order status to COMPLETED
-    const updated = await confirmOrder(order.order_id)
+    const result = await confirmReceipt(order.order_id)
+    const updated = result?.data?.order || order
     const idx = orders.value.findIndex(o => o.order_id === order.order_id)
     if (idx !== -1) orders.value[idx] = updated
-
-    // Step 2: Release escrowed funds to seller via Payment Service
-    await releasePayment(order.order_id).catch(err =>
-      console.warn('[Payment] Release failed:', err.message)
-    )
   } catch (err) {
     confirmError.value[order.order_id] = err.message || 'Failed to confirm receipt.'
   } finally {

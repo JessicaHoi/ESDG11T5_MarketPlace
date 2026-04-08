@@ -193,7 +193,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Navbar from '../../components/Navbar.vue'
 import { mockUser } from '../../data/mockData.js'
-import { getOrders, confirmOrder, updateOrder, fetchListings, getDisputes, getDisputesByOrder, releasePayment } from '../../services/api.js'
+import { getOrders, confirmReceipt, updateOrder, fetchListings, getDisputes, getDisputesByOrder } from '../../services/api.js'
 
 const route  = useRoute()
 const router = useRouter()
@@ -294,14 +294,8 @@ async function handleConfirmReceipt() {
   confirming.value = true
   actionError.value = null
   try {
-    // Step 1: Update order status to COMPLETED
-    const updated = await confirmOrder(orderID)
-    order.value = updated
-
-    // Step 2: Release escrowed funds to seller via Payment Service
-    await releasePayment(orderID).catch(err =>
-      console.warn('[Payment] Release failed:', err.message)
-    )
+    const result = await confirmReceipt(orderID)
+    order.value = result?.data?.order || order.value
 
   } catch (err) {
     actionError.value = err.message || 'Failed to confirm receipt.'
