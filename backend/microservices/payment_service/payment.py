@@ -135,7 +135,6 @@ def release_payment():
 
 
 # ── Freeze payment during dispute ─────────────────────────────────────────────
-@app.route("/payment/<int:paymentID>/freeze", methods=["PUT"])
 @app.route("/payment/<int:paymentID>/freeze", methods=["PATCH"])
 def freeze_payment(paymentID):
     payment = Payment.query.filter_by(paymentID=paymentID).first()

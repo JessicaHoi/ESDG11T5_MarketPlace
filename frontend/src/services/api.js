@@ -91,7 +91,7 @@ export function deliverOrder(orderID) {
 }
 
 export function updateOrder(orderID, fields) {
-  return put(`/orders/${orderID}`, fields)
+  return patch(`/orders/${orderID}`, fields)
 }
 
 // ─── ATOMIC: Payment ─────────────────────────────────────────────────────────

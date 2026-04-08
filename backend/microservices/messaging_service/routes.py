@@ -1,16 +1,15 @@
 from flask import Blueprint, request, jsonify
 from models import db, Message
-from publisher import publish_event
 from twilio_client import send_sms
 
 bp = Blueprint('messaging', __name__)
 
-
-# POST /messages — Send a message
+# ── POST /messages — Send a message ───────────────────────────────────────────
 @bp.route('/messages', methods=['POST'])
 def send_message():
     data = request.get_json()
 
+    # Store message in DB
     message = Message(
         orderID=data['orderID'],
         senderID=data['senderID'],
@@ -22,10 +21,7 @@ def send_message():
     db.session.add(message)
     db.session.commit()
 
-    # Publish to RabbitMQ → Notification Service will pick this up
-    publish_event('message.sent', message.to_dict())
-
-    # Send SMS to receiver via Twilio (optional)
+    # SMS is optional — only fires if receiverPhone is provided
     receiver_phone = data.get('receiverPhone')
     if receiver_phone:
         send_sms(
@@ -36,14 +32,14 @@ def send_message():
     return jsonify(message.to_dict()), 201
 
 
-# GET /messages/<messageID> — Get a single message by ID
+# ── GET /messages/<messageID> — Get a single message by ID ───────────────────
 @bp.route('/messages/<int:message_id>', methods=['GET'])
 def get_message(message_id):
     message = Message.query.get_or_404(message_id)
     return jsonify(message.to_dict())
 
 
-# GET /messages?orderID=X&senderID=Y&receiverID=Z — Get messages with optional filters
+# ── GET /messages?orderID=X&senderID=Y&receiverID=Z — Get messages with filters
 @bp.route('/messages', methods=['GET'])
 def get_messages():
     order_id    = request.args.get('orderID',    type=int)

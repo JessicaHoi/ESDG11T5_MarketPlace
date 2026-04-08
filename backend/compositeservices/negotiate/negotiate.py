@@ -1,17 +1,10 @@
-import os, requests
+import os, requests, pika, json
 from dotenv import load_dotenv
 
 load_dotenv()
 
-MESSAGING_URL    = os.environ.get("MESSAGING_SERVICE_URL", "http://messaging-service:5003")
-NOTIFICATION_URL = os.environ.get("NOTIFICATION_SERVICE_URL", "http://notification-service:5002")
-SELLER_PHONE     = os.environ.get("SELLER_PHONE")
-BUYER_PHONE      = os.environ.get("BUYER_PHONE")
-
-PHONE_MAP = {
-    1: BUYER_PHONE,
-    2: SELLER_PHONE,
-}
+MESSAGING_URL = os.environ.get("MESSAGING_SERVICE_URL", "http://messaging-service:5003")
+RABBITMQ_URL  = os.environ.get("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 
 
 def safe_json(resp):
@@ -21,18 +14,37 @@ def safe_json(resp):
         return {"raw": resp.text}
 
 
+def publish_event(exchange: str, routing_key: str, payload: dict):
+    """Publish an event to RabbitMQ via AMQP."""
+    try:
+        params = pika.URLParameters(RABBITMQ_URL)
+        conn   = pika.BlockingConnection(params)
+        ch     = conn.channel()
+        ch.exchange_declare(exchange=exchange, exchange_type='topic', durable=True)
+        ch.basic_publish(
+            exchange=exchange,
+            routing_key=routing_key,
+            body=json.dumps(payload),
+            properties=pika.BasicProperties(delivery_mode=2),
+        )
+        conn.close()
+        print(f"[AMQP] Published {routing_key} → {exchange}")
+    except Exception as e:
+        print(f"[AMQP] WARNING — could not publish event: {e}")
+
+
 def send_message(data: dict):
-    sender_id    = int(data['senderID'])
-    receiver_id  = int(data['receiverID'])
-    content      = data['content']
-    order_id     = data.get('orderID', 0)
-    message_type = data.get('messageType', 'text')
-    offer_amount = data.get('offerAmount', None)
-    is_first     = data.get('isFirst', False)
-    listing_name = data.get('listingName', '')
+    sender_id     = int(data['senderID'])
+    receiver_id   = int(data['receiverID'])
+    content       = data['content']
+    order_id      = data.get('orderID', 0)
+    message_type  = data.get('messageType', 'text')
+    offer_amount  = data.get('offerAmount', None)
+    is_first      = data.get('isFirst', False)
+    listing_name  = data.get('listingName', '')
     listing_price = data.get('listingPrice', '')
 
-    # ---------- Step 1: Store message ----------
+    # ---------- Step 1: Store message via messaging service ----------
     print(f"[1] Storing message from {sender_id} to {receiver_id}...")
     msg_payload = {
         "orderID":     order_id,
@@ -57,37 +69,31 @@ def send_message(data: dict):
     except Exception as e:
         return {"error": f"Messaging service unreachable: {e}"}, 503
 
-    # ---------- Step 2: Notify receiver ----------
-    print(f"[2] Sending notification to {receiver_id}...")
-    receiver_phone = PHONE_MAP.get(receiver_id) if is_first else None
-
+    # ---------- Step 2: Publish AMQP event → notification service consumes ----------
+    # Build notification text based on whether this is the first message
     if is_first and listing_name:
         notif_text = (
             f"[Ouimarché] User #{sender_id} is interested in '{listing_name}' "
             f"(${listing_price}). They have started a negotiation chat."
         )
     else:
-        preview = content[:60] + ('...' if len(content) > 60 else '')
+        preview    = content[:60] + ('...' if len(content) > 60 else '')
         notif_text = f"[Ouimarché] New message: \"{preview}\""
 
-    try:
-        notif_payload = {
+    print(f"[2] Publishing message.sent event via AMQP to notify receiver {receiver_id}...")
+    publish_event(
+        exchange    = 'messaging_events',
+        routing_key = 'message.sent',
+        payload     = {
             "orderID":      order_id,
-            "disputeID":    None,
-            "notification": notif_text,
+            "messageID":    message.get('messageID', 0),
+            "senderID":     sender_id,
             "receiverID":   receiver_id,
+            "content":      notif_text,   # use composed text so consumer shows right message
+            "isFirst":      is_first,
+            "listingName":  listing_name,
         }
-        if receiver_phone:
-            notif_payload["receiverPhone"] = receiver_phone
-
-        requests.post(
-            f"{NOTIFICATION_URL}/notification",
-            json=notif_payload,
-            timeout=10
-        )
-        print(f"[2] Notification sent to {receiver_id}")
-    except Exception as e:
-        print(f"[2] WARNING: Notification failed: {e} — continuing anyway")
+    )
 
     return message, 201
 

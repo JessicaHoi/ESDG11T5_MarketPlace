@@ -9,7 +9,9 @@ A second-hand marketplace platform built with a microservices architecture. Buye
 ### Composite Services
 | Service | Port | Description |
 |---|---|---|
-| Place Order | 5006 | Orchestrates messaging → order creation → Stripe escrow payment → seller notification |
+| Negotiate | 5008 | Orchestrates messaging between seller & buyer → notifications |
+| Place Order | 5006 | Orchestrates order creation → Stripe escrow payment → seller notification |
+| Confirm Status | 5009 | Orchestrates order status changes → payment release → notifications |
 | Raise Dispute | 5010 | Orchestrates dispute creation → payment freeze → evidence upload → notifications |
 
 ### Atomic Services

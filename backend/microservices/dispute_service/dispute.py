@@ -15,7 +15,6 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_recycle': 299}
 
 db = SQLAlchemy(app)
 
-
 class Dispute(db.Model):
     __tablename__ = 'dispute'
 
@@ -65,7 +64,6 @@ class Dispute(db.Model):
             "createdAt":      self.createdAt.isoformat() if self.createdAt else None,
         }
 
-
 # ── GET all disputes (with optional filters) ─────────────────────────────────
 @app.route("/dispute")
 def get_all():
@@ -87,7 +85,6 @@ def get_all():
         return jsonify({"code": 200, "data": {"disputes": [d.json() for d in dispute_list]}})
     return jsonify({"code": 404, "message": "There are no disputes."}), 404
 
-
 # ── GET single dispute ────────────────────────────────────────────────────────
 @app.route("/dispute/<int:disputeID>")
 def find_by_disputeID(disputeID):
@@ -95,7 +92,6 @@ def find_by_disputeID(disputeID):
     if dispute:
         return jsonify({"code": 200, "data": dispute.json()})
     return jsonify({"code": 404, "message": "Dispute not found."}), 404
-
 
 # ── CREATE dispute ────────────────────────────────────────────────────────────
 @app.route("/dispute/<int:disputeID>", methods=['POST'])
@@ -112,7 +108,6 @@ def create_dispute(disputeID):
         return jsonify({"code": 500, "data": {"disputeID": disputeID},
                         "message": str(e)}), 500
     return jsonify({"code": 201, "data": dispute.json()}), 201
-
 
 # ── PATCH dispute (update fields) ────────────────────────────────────────────
 @app.route("/dispute/<int:disputeID>", methods=['PATCH'])
@@ -141,13 +136,12 @@ def update_dispute(disputeID):
         return jsonify({"code": 500, "message": str(e)}), 500
     return jsonify({"code": 200, "data": dispute.json()})
 
-
 # ── Health check ──────────────────────────────────────────────────────────────
 @app.route("/health", methods=['GET'])
 def health():
     return jsonify({"code": 200, "status": "dispute service running"}), 200
 
-
+# ── DB Initialisation with Retry Logic ────────────────────────────────────────
 with app.app_context():
     retries = 5
     while retries:

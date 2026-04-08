@@ -194,6 +194,7 @@ def deliver_order(order_id: int):
 
 
 @app.put("/orders/{order_id}", response_model=Order)
+@app.patch("/orders/{order_id}", response_model=Order)
 def update_order(order_id: int, order_update: OrderUpdate):
     for index, order in enumerate(orders_db):
         if order.order_id == order_id:

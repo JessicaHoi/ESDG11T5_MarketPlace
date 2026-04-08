@@ -65,6 +65,14 @@ services:
           - /raise-dispute
         strip_path: false
 
+  - name: confirm-status-service
+    url: http://confirm-status-service:5009
+    routes:
+      - name: confirmstatus-routes
+        paths:
+          - /confirm-status
+        strip_path: false
+
   - name: negotiate-service
     url: http://negotiate-service:5008
     routes:

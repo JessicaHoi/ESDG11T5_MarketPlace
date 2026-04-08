@@ -18,7 +18,6 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
-
 class Evidence(db.Model):
     __tablename__ = 'evidence'
 
@@ -45,7 +44,6 @@ class Evidence(db.Model):
             "createdAt":   self.createdAt.isoformat() if self.createdAt else None,
         }
 
-
 # ── POST /evidence — Create evidence ─────────────────────────────────────────
 @app.route('/evidence', methods=['POST'])
 def create_evidence():
@@ -62,7 +60,6 @@ def create_evidence():
     db.session.commit()
     return jsonify({"code": 201, "data": evidence.json()}), 201
 
-
 # ── GET /evidence/<id> — Single evidence ──────────────────────────────────────
 @app.route('/evidence/<int:evidence_id>', methods=['GET'])
 def get_evidence(evidence_id):
@@ -70,7 +67,6 @@ def get_evidence(evidence_id):
     if not evidence:
         return jsonify({"code": 404, "message": "Evidence not found"}), 404
     return jsonify({"code": 200, "data": evidence.json()}), 200
-
 
 # ── GET /evidence?disputeID=X — All evidence for a dispute ───────────────────
 @app.route('/evidence', methods=['GET'])
@@ -83,7 +79,6 @@ def get_evidence_by_dispute():
     evidence_list = Evidence.query.filter_by(disputeID=dispute_id).order_by(Evidence.createdAt.asc()).all()
     return jsonify({"code": 200, "data": [e.json() for e in evidence_list]}), 200
 
-
 # ── PUT /evidence/<id>/approve ────────────────────────────────────────────────
 @app.route('/evidence/<int:evidence_id>/approve', methods=['PUT'])
 def approve_evidence(evidence_id):
@@ -94,12 +89,10 @@ def approve_evidence(evidence_id):
     db.session.commit()
     return jsonify({"code": 200, "data": evidence.json()}), 200
 
-
 # ── Health check ──────────────────────────────────────────────────────────────
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({"code": 200, "status": "evidence service running"}), 200
-
 
 with app.app_context():
     retries = 5

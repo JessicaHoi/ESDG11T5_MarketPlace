@@ -3,12 +3,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ORDER_URL        = os.environ.get("ORDER_SERVICE_URL")
-PAYMENT_URL      = os.environ.get("PAYMENT_SERVICE_URL")
-LISTING_URL      = os.environ.get("LISTING_SERVICE_URL")
-NOTIFICATION_URL = os.environ.get("NOTIFICATION_SERVICE_URL", "http://notification-service:5002")
-RABBITMQ_URL     = os.environ.get("RABBITMQ_URL")
-SELLER_PHONE     = os.environ.get("SELLER_PHONE")
+ORDER_URL    = os.environ.get("ORDER_SERVICE_URL")
+PAYMENT_URL  = os.environ.get("PAYMENT_SERVICE_URL")
+LISTING_URL  = os.environ.get("LISTING_SERVICE_URL")
+RABBITMQ_URL = os.environ.get("RABBITMQ_URL")
 
 
 def safe_json(resp):
@@ -19,9 +17,10 @@ def safe_json(resp):
 
 
 def publish_order_placed(payload: dict):
+    """Publish order.placed event to RabbitMQ — notification service handles SMS + SSE."""
     params = pika.URLParameters(RABBITMQ_URL)
-    conn = pika.BlockingConnection(params)
-    ch = conn.channel()
+    conn   = pika.BlockingConnection(params)
+    ch     = conn.channel()
     ch.exchange_declare(exchange='order_events', exchange_type='topic', durable=True)
     ch.basic_publish(
         exchange='order_events',
@@ -39,6 +38,7 @@ def place_order(data: dict):
     seller_id     = int(data['sellerID'])
     amount        = data['amount']
     listing_title = data.get('listingTitle', f'Listing #{listing_id}')
+    delivery_opt  = data.get('deliveryOption', 'meetup')
 
     # ---------- Step 1: Reserve the listing (OutSystems) ----------
     # TODO: Uncomment once OutSystems Listing Service URL is available
@@ -62,7 +62,7 @@ def place_order(data: dict):
     if order_resp.status_code != 201:
         return {"error": "Step 2 failed: Could not create order", "details": safe_json(order_resp)}, 400
 
-    order = order_resp.json()
+    order    = order_resp.json()
     order_id = order['order_id']
 
     # ---------- Step 3: Hold payment in escrow ----------
@@ -83,17 +83,12 @@ def place_order(data: dict):
     # ---------- Step 4: Decrement listing quantity (OutSystems) ----------
     print(f"[4] Updating listing quantity in OutSystems for listing_id={listing_id}...")
     try:
-        # Step 5a: GET current listing details
-        get_resp = requests.get(
-            f"{LISTING_URL}{listing_id}/",
-            timeout=10
-        )
+        get_resp = requests.get(f"{LISTING_URL}{listing_id}/", timeout=10)
         if get_resp.status_code == 200:
             listing_data = get_resp.json().get('data', {})
-            current_qty = listing_data.get('listingStockQty', 0)
-            new_qty = max(0, current_qty - 1)
+            current_qty  = listing_data.get('listingStockQty', 0)
+            new_qty      = max(0, current_qty - 1)
 
-            # Step 5b: PUT full listing object back with decremented quantity
             put_resp = requests.put(
                 f"{LISTING_URL}",
                 json={
@@ -112,49 +107,27 @@ def place_order(data: dict):
             if put_resp.status_code == 200:
                 print(f"[4] Listing quantity updated: {current_qty} → {new_qty}")
             else:
-                print(f"[4] WARNING: Failed to update quantity ({put_resp.status_code}): {put_resp.text} — continuing anyway")
+                print(f"[4] WARNING: Failed to update quantity ({put_resp.status_code}) — continuing anyway")
         else:
             print(f"[4] WARNING: Could not fetch listing ({get_resp.status_code}) — quantity update skipped")
     except Exception as e:
         print(f"[4] WARNING: OutSystems unreachable: {e} — continuing anyway")
 
-    # ---------- Step 5: Notify seller via SMS ----------
-    print(f"[5] Notifying seller via SMS...")
-    delivery_option = data.get('deliveryOption', 'meetup')
-    delivery_text = 'Shipping' if delivery_option == 'shipping' else 'Self-collection / Meetup'
-    sms_body = (
-        f"[Ouimarché] Payment received! "
-        f"Buyer has paid ${amount} for '{listing_title}' (Listing #{listing_id}). "
-        f"Delivery method: {delivery_text}. "
-        f"Order #{order_id}. Please arrange handover with the buyer."
-    )
-    try:
-        requests.post(
-            f"{NOTIFICATION_URL}/notification",
-            json={
-                "orderID":       order_id,
-                "notification":  sms_body,
-                "receiverID":    seller_id,
-                "receiverPhone": SELLER_PHONE,
-            },
-            timeout=10,
-        )
-        print(f"[5] Seller notification sent")
-    except Exception as e:
-        print(f"[5] WARNING: Could not send seller notification: {e}")
-
-    # ---------- Step 6: Publish order.placed to RabbitMQ ----------
-    print(f"[6] Publishing order.placed event...")
+    # ---------- Step 5: Publish order.placed via AMQP → notification service handles SMS + SSE ----------
+    # Notification service consumer (handle_order_placed) will notify both buyer and seller
+    print(f"[5] Publishing order.placed event via AMQP...")
     try:
         publish_order_placed({
-            "orderID":   order_id,
-            "buyerID":   buyer_id,
-            "sellerID":  seller_id,
-            "amount":    amount,
-            "listingID": listing_id
+            "orderID":       order_id,
+            "buyerID":       buyer_id,
+            "sellerID":      seller_id,
+            "amount":        amount,
+            "listingID":     listing_id,
+            "listingTitle":  listing_title,
+            "deliveryOption": delivery_opt,
         })
     except Exception as e:
-        print(f"[6] WARNING: Could not publish AMQP event: {e} — continuing anyway")
+        print(f"[5] WARNING: Could not publish AMQP event: {e} — continuing anyway")
 
     return {
         "message":   "Order placed successfully",

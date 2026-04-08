@@ -184,11 +184,8 @@ services:
       - "5007:5003"
     environment:
       - DB_URL=mysql+mysqlconnector://root:root@messaging-db:3306/messaging_db
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
       messaging-db:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
     networks:
       - marketplace_network
@@ -260,18 +257,13 @@ services:
       - ORDER_SERVICE_URL=http://order-service:8000
       - PAYMENT_SERVICE_URL=http://payment-service:5000
       - LISTING_SERVICE_URL=${LISTING_SERVICE_URL}
-      - NOTIFICATION_SERVICE_URL=http://notification-service:5002
-      - BUYER_PHONE=${BUYER_PHONE}
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
-      - SELLER_PHONE=${SELLER_PHONE}
     depends_on:
       rabbitmq:
         condition: service_healthy
       order-service:
         condition: service_started
       payment-service:
-        condition: service_started
-      messaging-service:
         condition: service_started
     networks:
       - marketplace_network
@@ -325,13 +317,11 @@ services:
       - "5008:5008"
     environment:
       - MESSAGING_SERVICE_URL=http://messaging-service:5003
-      - NOTIFICATION_SERVICE_URL=http://notification-service:5002
-      - BUYER_PHONE=${BUYER_PHONE}
-      - SELLER_PHONE=${SELLER_PHONE}
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
+      rabbitmq:
+        condition: service_healthy
       messaging-service:
-        condition: service_started
-      notification-service:
         condition: service_started
     networks:
       - marketplace_network
@@ -366,6 +356,32 @@ services:
       - raise-dispute-service
       - evidence-service
       - negotiate-service
+      - confirm-status-service
+    networks:
+      - marketplace_network
+
+  # ─────────────────────────────────────────────
+  # COMPOSITE SERVICE: CONFIRM STATUS
+  # ─────────────────────────────────────────────
+
+  confirm-status-service:
+    build:
+      context: ./backend/compositeservices/confirmStatus
+      dockerfile: Dockerfile
+    container_name: confirm_status_service
+    ports:
+      - "5009:5009"
+    environment:
+      - ORDER_SERVICE_URL=http://order-service:8000
+      - PAYMENT_SERVICE_URL=http://payment-service:5000
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      order-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
     networks:
       - marketplace_network
 
